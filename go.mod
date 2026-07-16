@@ -6,7 +6,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/bazelbuild/buildtools v0.0.0-20260622120422-77b9b380c0a4
 	github.com/git-pkgs/pom v0.1.5
-	github.com/git-pkgs/purl v0.1.13
+	github.com/git-pkgs/purl v0.1.14
 	gopkg.in/yaml.v3 v3.0.1
 )
 
