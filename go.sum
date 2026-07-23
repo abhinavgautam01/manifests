@@ -4,10 +4,10 @@ github.com/bazelbuild/buildtools v0.0.0-20260622120422-77b9b380c0a4 h1:zeHhy1A/3
 github.com/bazelbuild/buildtools v0.0.0-20260622120422-77b9b380c0a4/go.mod h1:PLNUetjLa77TCCziPsz0EI8a6CUxgC+1jgmWv0H25tg=
 github.com/git-pkgs/pom v0.1.5 h1:TGT8Az2OMxGWsXnSagtUMGzZm7Oax8HrSCteA+mi0qY=
 github.com/git-pkgs/pom v0.1.5/go.mod h1:ufdMBe1lKzqOeP9IUb9NPZ458xKV8E8NvuyBMxOfwIk=
-github.com/git-pkgs/purl v0.1.14 h1:GgqwiBNS0eKJqJ/gabUBEC10Xhpj6UX12kfNzujaeYc=
-github.com/git-pkgs/purl v0.1.14/go.mod h1:8oCcdcYZA/e1B33e7Ylju6azboTKjdqf3ybcbQj6I/o=
-github.com/git-pkgs/vers v0.2.6 h1:IelZd7BP/JhzTloUTDY67nehUgoYva3g9viqAMCHJg8=
-github.com/git-pkgs/vers v0.2.6/go.mod h1:biTbSQK1qdbrsxDEKnqe3Jzclxz8vW6uDcwKjfUGcOo=
+github.com/git-pkgs/purl v0.1.15 h1:iQ3clh0Cw41rkM0rf24B7ShnN9Z+UtLMAFlNDUs+Qd4=
+github.com/git-pkgs/purl v0.1.15/go.mod h1:PqCLVBDeZrZgHysR803/AntMELgIr2LFZVNCcwLH2m0=
+github.com/git-pkgs/vers v0.3.0 h1:xM4LLUCRmqzdDfe+/pVQUx4SRyFXRVth6tOsJ14wMKU=
+github.com/git-pkgs/vers v0.3.0/go.mod h1:biTbSQK1qdbrsxDEKnqe3Jzclxz8vW6uDcwKjfUGcOo=
 github.com/package-url/packageurl-go v0.1.6 h1:YO3p6u1XmCUliivUg/qWphaY8vI6hxSnnPv7Bfg3m5M=
 github.com/package-url/packageurl-go v0.1.6/go.mod h1:nKAWB8E6uk1MHqiS/lQb9pYBGH2+mdJ2PJc2s50dQY0=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
