@@ -248,7 +248,7 @@ func (p *nuspecParser) Parse(filename string, content []byte) (*core.Result, err
 		Dependencies: deps,
 	}
 	licenseValue := strings.TrimSpace(pkg.Metadata.License.Value)
-	switch strings.ToLower(pkg.Metadata.License.Type) {
+	switch strings.ToLower(strings.TrimSpace(pkg.Metadata.License.Type)) {
 	case "expression":
 		if licenseValue != "" {
 			result.Licenses = []string{licenseValue}

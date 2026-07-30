@@ -17,8 +17,8 @@ type elmJSON struct {
 	Name             string          `json:"name"`
 	Version          string          `json:"version"`
 	License          string          `json:"license"`
-	Dependencies     elmDependencies `json:"dependencies"`
-	TestDependencies elmDependencies `json:"test-dependencies"`
+	Dependencies     json.RawMessage `json:"dependencies"`
+	TestDependencies json.RawMessage `json:"test-dependencies"`
 }
 
 type elmDependencies struct {
@@ -32,47 +32,15 @@ func (p *elmJSONParser) Parse(filename string, content []byte) (*core.Result, er
 		return nil, &core.ParseError{Filename: filename, Err: err}
 	}
 
-	var deps []core.Dependency
-
-	// Direct dependencies
-	for name, version := range elm.Dependencies.Direct {
-		deps = append(deps, core.Dependency{
-			Name:    name,
-			Version: version,
-			Scope:   core.Runtime,
-			Direct:  true,
-		})
+	deps, err := parseElmDependencies(elm.Dependencies, core.Runtime)
+	if err != nil {
+		return nil, &core.ParseError{Filename: filename, Err: err}
 	}
-
-	// Indirect dependencies
-	for name, version := range elm.Dependencies.Indirect {
-		deps = append(deps, core.Dependency{
-			Name:    name,
-			Version: version,
-			Scope:   core.Runtime,
-			Direct:  false,
-		})
+	testDeps, err := parseElmDependencies(elm.TestDependencies, core.Test)
+	if err != nil {
+		return nil, &core.ParseError{Filename: filename, Err: err}
 	}
-
-	// Test dependencies (direct)
-	for name, version := range elm.TestDependencies.Direct {
-		deps = append(deps, core.Dependency{
-			Name:    name,
-			Version: version,
-			Scope:   core.Test,
-			Direct:  true,
-		})
-	}
-
-	// Test dependencies (indirect)
-	for name, version := range elm.TestDependencies.Indirect {
-		deps = append(deps, core.Dependency{
-			Name:    name,
-			Version: version,
-			Scope:   core.Test,
-			Direct:  false,
-		})
-	}
+	deps = append(deps, testDeps...)
 
 	return &core.Result{
 		Name:         elm.Name,
@@ -82,10 +50,53 @@ func (p *elmJSONParser) Parse(filename string, content []byte) (*core.Result, er
 	}, nil
 }
 
+func parseElmDependencies(content json.RawMessage, scope core.Scope) ([]core.Dependency, error) {
+	if len(content) == 0 || string(content) == "null" {
+		return nil, nil
+	}
+
+	var shape map[string]json.RawMessage
+	if err := json.Unmarshal(content, &shape); err != nil {
+		return nil, err
+	}
+	_, hasDirect := shape["direct"]
+	_, hasIndirect := shape["indirect"]
+	if hasDirect || hasIndirect {
+		var groups elmDependencies
+		if err := json.Unmarshal(content, &groups); err != nil {
+			return nil, err
+		}
+		deps := make([]core.Dependency, 0, len(groups.Direct)+len(groups.Indirect))
+		deps = appendElmDependencies(deps, groups.Direct, scope, true)
+		deps = appendElmDependencies(deps, groups.Indirect, scope, false)
+		return deps, nil
+	}
+
+	var packages map[string]string
+	if err := json.Unmarshal(content, &packages); err != nil {
+		return nil, err
+	}
+	return appendElmDependencies(nil, packages, scope, true), nil
+}
+
+func appendElmDependencies(deps []core.Dependency, packages map[string]string, scope core.Scope, direct bool) []core.Dependency {
+	for name, version := range packages {
+		deps = append(deps, core.Dependency{
+			Name:    name,
+			Version: version,
+			Scope:   scope,
+			Direct:  direct,
+		})
+	}
+	return deps
+}
+
 // elmPackageJSONParser parses elm-package.json files (Elm 0.18 and earlier).
 type elmPackageJSONParser struct{}
 
 type elmPackageJSON struct {
+	Name         string            `json:"name"`
+	Version      string            `json:"version"`
 	License      string            `json:"license"`
 	Dependencies map[string]string `json:"dependencies"`
 }
@@ -107,7 +118,12 @@ func (p *elmPackageJSONParser) Parse(filename string, content []byte) (*core.Res
 		})
 	}
 
-	return &core.Result{Licenses: declaredLicense(elm.License), Dependencies: deps}, nil
+	return &core.Result{
+		Name:         elm.Name,
+		Version:      elm.Version,
+		Licenses:     declaredLicense(elm.License),
+		Dependencies: deps,
+	}, nil
 }
 
 func declaredLicense(value string) []string {

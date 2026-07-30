@@ -571,7 +571,7 @@ func TestSetupCfg(t *testing.T) {
 	content := []byte(`[metadata]
 name = example
 version = 1.2.3
-license = MIT
+license = GPL (>= 2, < 3)
 license_files =
     LICENSE
 classifiers =
@@ -580,7 +580,7 @@ classifiers =
 
 [options]
 install_requires =
-    requests>=2
+    requests>=2,<3
 
 [options.extras_require]
 test =
@@ -594,7 +594,7 @@ test =
 	if result.Name != "example" || result.Version != "1.2.3" {
 		t.Errorf("identity = %q %q, want example 1.2.3", result.Name, result.Version)
 	}
-	if len(result.Licenses) != 2 || result.Licenses[0] != "MIT" ||
+	if len(result.Licenses) != 2 || result.Licenses[0] != "GPL (>= 2, < 3)" ||
 		result.Licenses[1] != "License :: OSI Approved :: MIT License" {
 		t.Errorf("Licenses = %q", result.Licenses)
 	}
@@ -604,7 +604,9 @@ test =
 	if len(result.Dependencies) != 2 {
 		t.Fatalf("Dependencies = %d, want 2", len(result.Dependencies))
 	}
-	if result.Dependencies[0].Name != "requests" || result.Dependencies[0].Scope != core.Runtime {
+	if result.Dependencies[0].Name != "requests" ||
+		result.Dependencies[0].Version != ">=2,<3" ||
+		result.Dependencies[0].Scope != core.Runtime {
 		t.Errorf("runtime dependency = %#v", result.Dependencies[0])
 	}
 	if result.Dependencies[1].Name != "pytest" || result.Dependencies[1].Scope != core.Test {

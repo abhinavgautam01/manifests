@@ -835,19 +835,22 @@ func (p *setupCfgParser) Parse(_ string, content []byte) (*core.Result, error) {
 	metadata := sections["metadata"]
 	options := sections["options"]
 
-	licenses := configValues(metadata["license"])
-	licenses = append(licenses, licenseClassifiers(configValues(metadata["classifiers"]))...)
+	var licenses []string
+	if license := strings.TrimSpace(metadata["license"]); license != "" {
+		licenses = []string{license}
+	}
+	licenses = append(licenses, licenseClassifiers(configLines(metadata["classifiers"]))...)
 
 	licenseFile := strings.TrimSpace(metadata["license_file"])
 	if licenseFile == "" {
-		files := configValues(metadata["license_files"])
+		files := configCommaValues(metadata["license_files"])
 		if len(files) > 0 {
 			licenseFile = files[0]
 		}
 	}
 
 	var deps []core.Dependency
-	for _, requirement := range configValues(options["install_requires"]) {
+	for _, requirement := range configLines(options["install_requires"]) {
 		name, version := parseSetupRequirement(requirement)
 		if name != "" {
 			deps = append(deps, core.Dependency{
@@ -859,7 +862,7 @@ func (p *setupCfgParser) Parse(_ string, content []byte) (*core.Result, error) {
 		}
 	}
 	for group, value := range sections["options.extras_require"] {
-		for _, requirement := range configValues(value) {
+		for _, requirement := range configLines(value) {
 			name, version := parseSetupRequirement(requirement)
 			if name != "" {
 				deps = append(deps, core.Dependency{
@@ -916,17 +919,27 @@ func parseSetupCfgSections(content string) map[string]map[string]string {
 	return sections
 }
 
-func configValues(value string) []string {
+func configLines(value string) []string {
 	var values []string
-	for _, line := range strings.FieldsFunc(value, func(r rune) bool {
-		return r == '\n' || r == ','
-	}) {
+	for _, line := range strings.Split(value, "\n") {
 		line = strings.TrimSpace(line)
 		if idx := strings.Index(line, " #"); idx >= 0 {
 			line = strings.TrimSpace(line[:idx])
 		}
 		if line != "" {
 			values = append(values, line)
+		}
+	}
+	return values
+}
+
+func configCommaValues(value string) []string {
+	var values []string
+	for _, line := range configLines(value) {
+		for item := range strings.SplitSeq(line, ",") {
+			if item = strings.TrimSpace(item); item != "" {
+				values = append(values, item)
+			}
 		}
 	}
 	return values

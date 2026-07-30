@@ -24,6 +24,7 @@ var (
 	// licenses: ["MIT", "Apache-2.0"] inside package/0
 	mixLicensesRegex = regexp.MustCompile(`(?s)\blicenses:\s*\[([^\]]*)\]`)
 	mixQuotedRegex   = regexp.MustCompile(`["']([^"']+)["']`)
+	mixPackageRegex  = regexp.MustCompile(`\bdefp?\s+package(?:\(\))?\s*(?:do|,\s*do:)`)
 )
 
 func (p *mixExsParser) Parse(filename string, content []byte) (*core.Result, error) {
@@ -65,14 +66,11 @@ func (p *mixExsParser) Parse(filename string, content []byte) (*core.Result, err
 }
 
 func extractMixLicenses(text string) []string {
-	packageStart := strings.Index(text, "defp package do")
-	if packageStart < 0 {
-		packageStart = strings.Index(text, "def package do")
-	}
-	if packageStart < 0 {
+	location := mixPackageRegex.FindStringIndex(text)
+	if location == nil {
 		return nil
 	}
-	section := extractMixBlock(text[packageStart:])
+	section := extractMixBlock(text[location[0]:])
 	match := mixLicensesRegex.FindStringSubmatch(section)
 	if match == nil {
 		return nil
