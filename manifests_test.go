@@ -3,6 +3,7 @@ package manifests
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -52,6 +53,192 @@ func TestParseAllEcosystems(t *testing.T) {
 			}
 			if len(result.Dependencies) == 0 {
 				t.Error("expected dependencies, got none")
+			}
+		})
+	}
+}
+
+func TestParseDeclaredLicenses(t *testing.T) {
+	testCases := []struct {
+		name        string
+		filename    string
+		content     string
+		licenses    []string
+		licenseFile string
+	}{
+		{
+			name:     "npm scalar",
+			filename: "package.json",
+			content:  `{"name":"example","version":"1.0.0","license":"MIT"}`,
+			licenses: []string{"MIT"},
+		},
+		{
+			name:     "npm legacy object and array",
+			filename: "package.json",
+			content:  `{"license":{"type":"ISC","url":"https://example.test/ISC"},"licenses":[{"type":"MIT"},{"type":"Apache-2.0"}]}`,
+			licenses: []string{"ISC", "MIT", "Apache-2.0"},
+		},
+		{
+			name:        "cargo",
+			filename:    "Cargo.toml",
+			content:     "[package]\nname = \"example\"\nversion = \"1.0.0\"\nlicense = \"MIT OR Apache-2.0\"\nlicense-file = \"LICENSE.md\"\n",
+			licenses:    []string{"MIT OR Apache-2.0"},
+			licenseFile: "LICENSE.md",
+		},
+		{
+			name:        "pyproject PEP 639",
+			filename:    "pyproject.toml",
+			content:     "[project]\nname = \"example\"\nversion = \"1.0.0\"\nlicense = \"MIT\"\nlicense-files = [\"LICENSE\", \"NOTICE\"]\n",
+			licenses:    []string{"MIT"},
+			licenseFile: "LICENSE",
+		},
+		{
+			name:     "pyproject legacy metadata",
+			filename: "pyproject.toml",
+			content: `[project]
+name = "example"
+version = "1.0.0"
+license = {text = "BSD-3-Clause"}
+classifiers = ["Development Status :: 5 - Production/Stable", "License :: OSI Approved :: BSD License"]
+`,
+			licenses: []string{"BSD-3-Clause", "License :: OSI Approved :: BSD License"},
+		},
+		{
+			name:        "setup cfg",
+			filename:    "setup.cfg",
+			content:     "[metadata]\nname = example\nversion = 1.0.0\nlicense = MIT\nlicense_files =\n    LICENSE\n    NOTICE\nclassifiers =\n    License :: OSI Approved :: MIT License\n[options]\ninstall_requires =\n    requests>=2\n",
+			licenses:    []string{"MIT", "License :: OSI Approved :: MIT License"},
+			licenseFile: "LICENSE",
+		},
+		{
+			name:     "setup py",
+			filename: "setup.py",
+			content: `setup(
+    name="example",
+    version="1.0.0",
+    license="MIT",
+    classifiers=["License :: OSI Approved :: MIT License"],
+    license_files=["LICENSE", "NOTICE"],
+)`,
+			licenses:    []string{"MIT", "License :: OSI Approved :: MIT License"},
+			licenseFile: "LICENSE",
+		},
+		{
+			name:     "gemspec array",
+			filename: "example.gemspec",
+			content:  `Gem::Specification.new { |s| s.name = "example"; s.version = "1.0.0"; s.licenses = ["MIT", "Apache-2.0"] }`,
+			licenses: []string{"MIT", "Apache-2.0"},
+		},
+		{
+			name:        "podspec hash",
+			filename:    "example.podspec",
+			content:     `Pod::Spec.new { |s| s.name = "Example"; s.version = "1.0"; s.license = { :type => "MIT", :file => "LICENSE" } }`,
+			licenses:    []string{"MIT"},
+			licenseFile: "LICENSE",
+		},
+		{
+			name:     "composer array",
+			filename: "composer.json",
+			content:  `{"name":"example/package","version":"1.0.0","license":["MIT","Apache-2.0"]}`,
+			licenses: []string{"MIT", "Apache-2.0"},
+		},
+		{
+			name:     "maven",
+			filename: "pom.xml",
+			content: `<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.example</groupId>
+  <artifactId>example</artifactId>
+  <version>1.0.0</version>
+  <licenses>
+    <license><name>MIT</name><url>LICENSE.txt</url></license>
+    <license><name>Apache-2.0</name><url>https://www.apache.org/licenses/LICENSE-2.0.txt</url></license>
+  </licenses>
+</project>`,
+			licenses:    []string{"MIT", "Apache-2.0"},
+			licenseFile: "LICENSE.txt",
+		},
+		{
+			name:     "nuspec expression",
+			filename: "example.nuspec",
+			content:  `<package><metadata><id>Example</id><version>1.0.0</version><license type="expression">MIT OR Apache-2.0</license></metadata></package>`,
+			licenses: []string{"MIT OR Apache-2.0"},
+		},
+		{
+			name:        "nuspec file",
+			filename:    "example.nuspec",
+			content:     `<package><metadata><id>Example</id><version>1.0.0</version><license type="file">licenses/LICENSE.md</license></metadata></package>`,
+			licenseFile: "licenses/LICENSE.md",
+		},
+		{
+			name:        "cabal",
+			filename:    "example.cabal",
+			content:     "cabal-version: 3.0\nname: example\nversion: 1.0.0\nlicense: BSD-3-Clause\nlicense-files: LICENSE, NOTICE\n",
+			licenses:    []string{"BSD-3-Clause"},
+			licenseFile: "LICENSE",
+		},
+		{
+			name:        "R DESCRIPTION",
+			filename:    "DESCRIPTION",
+			content:     "Package: example\nVersion: 1.0.0\nLicense: GPL-3 | BSD_3_clause + file LICENSE\n",
+			licenses:    []string{"GPL-3", "BSD_3_clause"},
+			licenseFile: "LICENSE",
+		},
+		{
+			name:     "pub has no declaration",
+			filename: "pubspec.yaml",
+			content:  "name: example\nversion: 1.0.0\n",
+		},
+		{
+			name:     "go mod has no declaration",
+			filename: "go.mod",
+			content:  "module example.com/project\n\ngo 1.25\n",
+		},
+		{
+			name:     "mix package",
+			filename: "mix.exs",
+			content: `defmodule Example.MixProject do
+  use Mix.Project
+  def project do
+    [app: :example, version: "1.0.0", package: package()]
+  end
+  defp package do
+    [licenses: ["MIT", "Apache-2.0"]]
+  end
+end`,
+			licenses: []string{"MIT", "Apache-2.0"},
+		},
+		{
+			name:     "opam list",
+			filename: "example.opam",
+			content:  "opam-version: \"2.0\"\nname: \"example\"\nversion: \"1.0.0\"\nlicense: [\"MIT\" \"ISC\"]\ndepends: [\"ocaml\" {>= \"5.0\"} \"dune\"]\n",
+			licenses: []string{"MIT", "ISC"},
+		},
+		{
+			name:     "elm",
+			filename: "elm.json",
+			content:  `{"type":"package","name":"author/example","version":"1.0.0","license":"BSD-3-Clause","dependencies":{},"test-dependencies":{}}`,
+			licenses: []string{"BSD-3-Clause"},
+		},
+		{
+			name:     "bower array",
+			filename: "bower.json",
+			content:  `{"name":"example","version":"1.0.0","license":["MIT","Apache-2.0"]}`,
+			licenses: []string{"MIT", "Apache-2.0"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Parse(tc.filename, []byte(tc.content))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if !slices.Equal(result.Licenses, tc.licenses) {
+				t.Errorf("Licenses = %q, want %q", result.Licenses, tc.licenses)
+			}
+			if result.LicenseFile != tc.licenseFile {
+				t.Errorf("LicenseFile = %q, want %q", result.LicenseFile, tc.licenseFile)
 			}
 		})
 	}

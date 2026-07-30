@@ -51,6 +51,7 @@ func init() {
 
 	// setup.py - manifest
 	core.Register("pypi", core.Manifest, &setupPyParser{}, core.ExactMatch("setup.py"))
+	core.Register("pypi", core.Manifest, &setupCfgParser{}, core.ExactMatch("setup.cfg"))
 
 	// pylock.toml - lockfile (PEP 665)
 	core.Register("pypi", core.Lockfile, &pylockTomlParser{}, core.ExactMatch("pylock.toml"))
@@ -262,6 +263,7 @@ func (p *pyprojectParser) Parse(filename string, content []byte) (*core.Result, 
 			Poetry struct {
 				Name            string         `toml:"name"`
 				Version         string         `toml:"version"`
+				License         string         `toml:"license"`
 				Dependencies    map[string]any `toml:"dependencies"`
 				DevDependencies map[string]any `toml:"dev-dependencies"`
 				Group           map[string]struct {
@@ -272,6 +274,9 @@ func (p *pyprojectParser) Parse(filename string, content []byte) (*core.Result, 
 		Project struct {
 			Name                 string              `toml:"name"`
 			Version              string              `toml:"version"`
+			License              any                 `toml:"license"`
+			LicenseFiles         []string            `toml:"license-files"`
+			Classifiers          []string            `toml:"classifiers"`
 			Dependencies         []string            `toml:"dependencies"`
 			OptionalDependencies map[string][]string `toml:"optional-dependencies"`
 		} `toml:"project"`
@@ -365,7 +370,51 @@ func (p *pyprojectParser) Parse(filename string, content []byte) (*core.Result, 
 		selfVersion = pyproject.Tool.Poetry.Version
 	}
 
-	return &core.Result{Name: selfName, Version: selfVersion, Dependencies: deps}, nil
+	licenses, licenseFile := pyprojectLicenses(pyproject.Project.License, pyproject.Project.LicenseFiles, pyproject.Project.Classifiers)
+	if pyproject.Project.Name == "" && pyproject.Tool.Poetry.License != "" {
+		licenses = []string{pyproject.Tool.Poetry.License}
+	}
+
+	return &core.Result{
+		Name:         selfName,
+		Version:      selfVersion,
+		Licenses:     licenses,
+		LicenseFile:  licenseFile,
+		Dependencies: deps,
+	}, nil
+}
+
+func pyprojectLicenses(license any, licenseFiles, classifiers []string) ([]string, string) {
+	var licenses []string
+	var licenseFile string
+	switch value := license.(type) {
+	case string:
+		if value != "" {
+			licenses = append(licenses, value)
+		}
+	case map[string]any:
+		if text, ok := value["text"].(string); ok && text != "" {
+			licenses = append(licenses, text)
+		}
+		if file, ok := value["file"].(string); ok {
+			licenseFile = file
+		}
+	}
+	licenses = append(licenses, licenseClassifiers(classifiers)...)
+	if licenseFile == "" && len(licenseFiles) > 0 {
+		licenseFile = licenseFiles[0]
+	}
+	return licenses, licenseFile
+}
+
+func licenseClassifiers(classifiers []string) []string {
+	var licenses []string
+	for _, classifier := range classifiers {
+		if strings.HasPrefix(classifier, "License ::") {
+			licenses = append(licenses, classifier)
+		}
+	}
+	return licenses
 }
 
 func extractPoetryVersion(value any) string {
@@ -694,6 +743,11 @@ var (
 	setupNameRegex = regexp.MustCompile(`\bname\s*=\s*['"]([^'"]+)['"]`)
 	// Match version= keyword argument in setup()
 	setupVersionRegex = regexp.MustCompile(`\bversion\s*=\s*['"]([^'"]+)['"]`)
+	// Match license= keyword argument in setup()
+	setupLicenseRegex = regexp.MustCompile(`\blicense\s*=\s*['"]([^'"]+)['"]`)
+	// Match classifiers= and license_files= list arguments in setup()
+	setupClassifiersRegex  = regexp.MustCompile(`(?s)\bclassifiers\s*=\s*\[([^\]]*)\]`)
+	setupLicenseFilesRegex = regexp.MustCompile(`(?s)\blicense_files\s*=\s*\[([^\]]*)\]`)
 )
 
 func (p *setupPyParser) Parse(filename string, content []byte) (*core.Result, error) {
@@ -706,6 +760,20 @@ func (p *setupPyParser) Parse(filename string, content []byte) (*core.Result, er
 	}
 	if m := setupVersionRegex.FindStringSubmatch(contentStr); m != nil {
 		selfVersion = m[1]
+	}
+	var licenses []string
+	if m := setupLicenseRegex.FindStringSubmatch(contentStr); m != nil {
+		licenses = append(licenses, m[1])
+	}
+	if m := setupClassifiersRegex.FindStringSubmatch(contentStr); m != nil {
+		licenses = append(licenses, licenseClassifiers(quotedStrings(m[1]))...)
+	}
+	var licenseFile string
+	if m := setupLicenseFilesRegex.FindStringSubmatch(contentStr); m != nil {
+		files := quotedStrings(m[1])
+		if len(files) > 0 {
+			licenseFile = files[0]
+		}
 	}
 
 	// Parse install_requires
@@ -740,7 +808,128 @@ func (p *setupPyParser) Parse(filename string, content []byte) (*core.Result, er
 		}
 	}
 
-	return &core.Result{Name: selfName, Version: selfVersion, Dependencies: deps}, nil
+	return &core.Result{
+		Name:         selfName,
+		Version:      selfVersion,
+		Licenses:     licenses,
+		LicenseFile:  licenseFile,
+		Dependencies: deps,
+	}, nil
+}
+
+func quotedStrings(value string) []string {
+	var values []string
+	for _, match := range quotedStringRegex.FindAllStringSubmatch(value, -1) {
+		if len(match) > 1 {
+			values = append(values, match[1])
+		}
+	}
+	return values
+}
+
+// setupCfgParser parses setup.cfg files.
+type setupCfgParser struct{}
+
+func (p *setupCfgParser) Parse(_ string, content []byte) (*core.Result, error) {
+	sections := parseSetupCfgSections(string(content))
+	metadata := sections["metadata"]
+	options := sections["options"]
+
+	licenses := configValues(metadata["license"])
+	licenses = append(licenses, licenseClassifiers(configValues(metadata["classifiers"]))...)
+
+	licenseFile := strings.TrimSpace(metadata["license_file"])
+	if licenseFile == "" {
+		files := configValues(metadata["license_files"])
+		if len(files) > 0 {
+			licenseFile = files[0]
+		}
+	}
+
+	var deps []core.Dependency
+	for _, requirement := range configValues(options["install_requires"]) {
+		name, version := parseSetupRequirement(requirement)
+		if name != "" {
+			deps = append(deps, core.Dependency{
+				Name:    name,
+				Version: version,
+				Scope:   core.Runtime,
+				Direct:  true,
+			})
+		}
+	}
+	for group, value := range sections["options.extras_require"] {
+		for _, requirement := range configValues(value) {
+			name, version := parseSetupRequirement(requirement)
+			if name != "" {
+				deps = append(deps, core.Dependency{
+					Name:    name,
+					Version: version,
+					Scope:   optionalGroupScope(group),
+					Direct:  true,
+				})
+			}
+		}
+	}
+
+	return &core.Result{
+		Name:         strings.TrimSpace(metadata["name"]),
+		Version:      strings.TrimSpace(metadata["version"]),
+		Licenses:     licenses,
+		LicenseFile:  licenseFile,
+		Dependencies: deps,
+	}, nil
+}
+
+func parseSetupCfgSections(content string) map[string]map[string]string {
+	sections := make(map[string]map[string]string)
+	var section, key string
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, ";") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			section = strings.ToLower(strings.TrimSpace(trimmed[1 : len(trimmed)-1]))
+			if sections[section] == nil {
+				sections[section] = make(map[string]string)
+			}
+			key = ""
+			continue
+		}
+		if section == "" {
+			continue
+		}
+		if line[0] == ' ' || line[0] == '\t' {
+			if key != "" {
+				sections[section][key] += "\n" + trimmed
+			}
+			continue
+		}
+		separator := strings.IndexAny(line, "=:")
+		if separator < 0 {
+			continue
+		}
+		key = strings.ToLower(strings.TrimSpace(line[:separator]))
+		sections[section][key] = strings.TrimSpace(line[separator+1:])
+	}
+	return sections
+}
+
+func configValues(value string) []string {
+	var values []string
+	for _, line := range strings.FieldsFunc(value, func(r rune) bool {
+		return r == '\n' || r == ','
+	}) {
+		line = strings.TrimSpace(line)
+		if idx := strings.Index(line, " #"); idx >= 0 {
+			line = strings.TrimSpace(line[:idx])
+		}
+		if line != "" {
+			values = append(values, line)
+		}
+	}
+	return values
 }
 
 func parseSetupRequirement(req string) (string, string) {

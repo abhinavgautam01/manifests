@@ -31,6 +31,7 @@ func (p *cabalParser) Parse(filename string, content []byte) (*core.Result, erro
 	seen := make(map[string]bool)
 
 	pkgName, pkgVersion := cabalHeaderFields(lines)
+	licenses, licenseFile := cabalLicenseFields(lines)
 	inBuildDepends := false
 
 	for _, line := range lines {
@@ -89,7 +90,13 @@ func (p *cabalParser) Parse(filename string, content []byte) (*core.Result, erro
 		}
 	}
 
-	return &core.Result{Name: pkgName, Version: pkgVersion, Dependencies: deps}, nil
+	return &core.Result{
+		Name:         pkgName,
+		Version:      pkgVersion,
+		Licenses:     licenses,
+		LicenseFile:  licenseFile,
+		Dependencies: deps,
+	}, nil
 }
 
 // cabalHeaderFields returns the top-level name: and version: values.
@@ -111,6 +118,52 @@ func cabalHeaderFields(lines []string) (name, version string) {
 		}
 	}
 	return name, version
+}
+
+func cabalLicenseFields(lines []string) ([]string, string) {
+	var license, licenseFile string
+	inLicenseFiles := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		indented := line[0] == ' ' || line[0] == '\t'
+		if inLicenseFiles && indented && licenseFile == "" {
+			licenseFile = firstCabalListValue(trimmed)
+			continue
+		}
+		if indented {
+			continue
+		}
+		inLicenseFiles = false
+		lower := strings.ToLower(line)
+		switch {
+		case strings.HasPrefix(lower, "license:"):
+			license = strings.TrimSpace(line[len("license:"):])
+		case strings.HasPrefix(lower, "license-file:"):
+			if licenseFile == "" {
+				licenseFile = strings.TrimSpace(line[len("license-file:"):])
+			}
+		case strings.HasPrefix(lower, "license-files:"):
+			inLicenseFiles = true
+			if licenseFile == "" {
+				licenseFile = firstCabalListValue(line[len("license-files:"):])
+			}
+		}
+	}
+	if license == "" {
+		return nil, licenseFile
+	}
+	return []string{license}, licenseFile
+}
+
+func firstCabalListValue(value string) string {
+	value = strings.TrimSpace(strings.TrimPrefix(value, ","))
+	if idx := strings.IndexByte(value, ','); idx >= 0 {
+		value = value[:idx]
+	}
+	return strings.TrimSpace(value)
 }
 
 // stackLockParser parses stack.yaml.lock files.

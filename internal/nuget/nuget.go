@@ -176,13 +176,19 @@ type nuspecParser struct{}
 
 type nuspecPackage struct {
 	Metadata struct {
-		ID           string `xml:"id"`
-		Version      string `xml:"version"`
+		ID           string        `xml:"id"`
+		Version      string        `xml:"version"`
+		License      nuspecLicense `xml:"license"`
 		Dependencies struct {
 			Groups []nuspecDepGroup `xml:"group"`
 			Deps   []nuspecDep      `xml:"dependency"`
 		} `xml:"dependencies"`
 	} `xml:"metadata"`
+}
+
+type nuspecLicense struct {
+	Type  string `xml:"type,attr"`
+	Value string `xml:",chardata"`
 }
 
 type nuspecDepGroup struct {
@@ -236,11 +242,21 @@ func (p *nuspecParser) Parse(filename string, content []byte) (*core.Result, err
 		}
 	}
 
-	return &core.Result{
+	result := &core.Result{
 		Name:         pkg.Metadata.ID,
 		Version:      pkg.Metadata.Version,
 		Dependencies: deps,
-	}, nil
+	}
+	licenseValue := strings.TrimSpace(pkg.Metadata.License.Value)
+	switch strings.ToLower(pkg.Metadata.License.Type) {
+	case "expression":
+		if licenseValue != "" {
+			result.Licenses = []string{licenseValue}
+		}
+	case "file":
+		result.LicenseFile = licenseValue
+	}
+	return result, nil
 }
 
 // packagesConfigParser parses packages.config files.

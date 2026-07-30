@@ -2,6 +2,7 @@ package gem
 
 import (
 	"github.com/git-pkgs/manifests/internal/core"
+	"regexp"
 	"strings"
 )
 
@@ -337,6 +338,12 @@ func (p *gemfileLockParser) Parse(filename string, content []byte) (*core.Result
 // gemspecParser parses .gemspec files.
 type gemspecParser struct{}
 
+var (
+	gemspecLicenseRegex  = regexp.MustCompile(`(?m)\.license\s*=\s*["']([^"']+)["']`)
+	gemspecLicensesRegex = regexp.MustCompile(`(?s)\.licenses\s*=\s*\[([^\]]*)\]`)
+	rubyQuotedRegex      = regexp.MustCompile(`["']([^"']+)["']`)
+)
+
 // extractGemspecAttr extracts a string literal from lines like `s.name = "foo"`
 // or `spec.version = 'foo'`. Returns empty when the RHS is not a string literal
 // (e.g. a constant reference).
@@ -448,5 +455,20 @@ func (p *gemspecParser) Parse(filename string, content []byte) (*core.Result, er
 		return true
 	})
 
-	return &core.Result{Name: selfName, Version: selfVersion, Dependencies: deps}, nil
+	var licenses []string
+	if match := gemspecLicenseRegex.FindStringSubmatch(text); match != nil {
+		licenses = append(licenses, match[1])
+	}
+	if match := gemspecLicensesRegex.FindStringSubmatch(text); match != nil {
+		for _, value := range rubyQuotedRegex.FindAllStringSubmatch(match[1], -1) {
+			licenses = append(licenses, value[1])
+		}
+	}
+
+	return &core.Result{
+		Name:         selfName,
+		Version:      selfVersion,
+		Licenses:     licenses,
+		Dependencies: deps,
+	}, nil
 }

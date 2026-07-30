@@ -76,8 +76,9 @@ func main() {
 | pre-commit | .pre-commit-config.yaml, prek.toml | |
 | npm | package.json, bower.json | package-lock.json, npm-shrinkwrap.json, yarn.lock, pnpm-lock.yaml, bun.lock, npm-ls.json |
 | nuget | *.csproj, *.vbproj, *.fsproj, *.nuspec, packages.config, Project.json | packages.lock.json, paket.lock, project.assets.json, *.deps.json, Project.lock.json |
+| opam | opam, *.opam | |
 | pub | pubspec.yaml | pubspec.lock |
-| pypi | requirements.txt, Pipfile, pyproject.toml, setup.py | Pipfile.lock, poetry.lock, pdm.lock, uv.lock, pip-dependency-graph.json, pip-resolved-dependencies.txt, pylock.toml |
+| pypi | requirements.txt, Pipfile, pyproject.toml, setup.py, setup.cfg | Pipfile.lock, poetry.lock, pdm.lock, uv.lock, pip-dependency-graph.json, pip-resolved-dependencies.txt, pylock.toml |
 | rpm | *.spec | |
 | swift | Package.swift | Package.resolved |
 | vcpkg | vcpkg.json | |
@@ -184,11 +185,15 @@ type ParseResult struct {
     Kind         Kind         // manifest, lockfile, or supplement
     Name         string       // the package's own name, when the format declares one
     Version      string       // the package's own version, when declared
+    Licenses     []string     // raw declared license values
+    LicenseFile  string       // manifest-relative path to a declared license file
     Dependencies []Dependency
 }
 ```
 
 `Name` and `Version` are populated for manifest formats that declare their own package identity (Cargo.toml `[package]`, package.json `"name"`, go.mod `module`, `.gemspec`, and so on). They are empty for lockfiles and for dependency-only files like Gemfile or requirements.txt.
+
+`Licenses` contains decoded values as declared by the manifest; it does not normalize them into SPDX expressions. `LicenseFile` is populated when a format explicitly identifies a license file. Both are empty for formats without license metadata.
 
 ### Kind
 

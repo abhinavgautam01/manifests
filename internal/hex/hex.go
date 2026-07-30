@@ -21,6 +21,9 @@ var (
 	mixAppRegex = regexp.MustCompile(`\bapp:\s*:([a-zA-Z_][a-zA-Z0-9_]*)`)
 	// version: "0.0.1" inside def project
 	mixVersionRegex = regexp.MustCompile(`\bversion:\s*"([^"]+)"`)
+	// licenses: ["MIT", "Apache-2.0"] inside package/0
+	mixLicensesRegex = regexp.MustCompile(`(?s)\blicenses:\s*\[([^\]]*)\]`)
+	mixQuotedRegex   = regexp.MustCompile(`["']([^"']+)["']`)
 )
 
 func (p *mixExsParser) Parse(filename string, content []byte) (*core.Result, error) {
@@ -37,6 +40,7 @@ func (p *mixExsParser) Parse(filename string, content []byte) (*core.Result, err
 			selfVersion = m[1]
 		}
 	}
+	licenses := extractMixLicenses(text)
 
 	// Find deps function content
 	depsStart := strings.Index(text, "defp deps do")
@@ -44,7 +48,7 @@ func (p *mixExsParser) Parse(filename string, content []byte) (*core.Result, err
 		depsStart = strings.Index(text, "def deps do")
 	}
 	if depsStart < 0 {
-		return &core.Result{Name: selfName, Version: selfVersion, Dependencies: deps}, nil
+		return &core.Result{Name: selfName, Version: selfVersion, Licenses: licenses, Dependencies: deps}, nil
 	}
 
 	section := extractMixBlock(text[depsStart:])
@@ -57,7 +61,27 @@ func (p *mixExsParser) Parse(filename string, content []byte) (*core.Result, err
 		})
 	}
 
-	return &core.Result{Name: selfName, Version: selfVersion, Dependencies: deps}, nil
+	return &core.Result{Name: selfName, Version: selfVersion, Licenses: licenses, Dependencies: deps}, nil
+}
+
+func extractMixLicenses(text string) []string {
+	packageStart := strings.Index(text, "defp package do")
+	if packageStart < 0 {
+		packageStart = strings.Index(text, "def package do")
+	}
+	if packageStart < 0 {
+		return nil
+	}
+	section := extractMixBlock(text[packageStart:])
+	match := mixLicensesRegex.FindStringSubmatch(section)
+	if match == nil {
+		return nil
+	}
+	var licenses []string
+	for _, value := range mixQuotedRegex.FindAllStringSubmatch(match[1], -1) {
+		licenses = append(licenses, value[1])
+	}
+	return licenses
 }
 
 // extractMixBlock returns the bracket-delimited body starting at text.

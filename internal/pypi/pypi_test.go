@@ -567,6 +567,51 @@ func TestSetupPy(t *testing.T) {
 	}
 }
 
+func TestSetupCfg(t *testing.T) {
+	content := []byte(`[metadata]
+name = example
+version = 1.2.3
+license = MIT
+license_files =
+    LICENSE
+classifiers =
+    Development Status :: 5 - Production/Stable
+    License :: OSI Approved :: MIT License
+
+[options]
+install_requires =
+    requests>=2
+
+[options.extras_require]
+test =
+    pytest>=8
+`)
+
+	result, err := (&setupCfgParser{}).Parse("setup.cfg", content)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if result.Name != "example" || result.Version != "1.2.3" {
+		t.Errorf("identity = %q %q, want example 1.2.3", result.Name, result.Version)
+	}
+	if len(result.Licenses) != 2 || result.Licenses[0] != "MIT" ||
+		result.Licenses[1] != "License :: OSI Approved :: MIT License" {
+		t.Errorf("Licenses = %q", result.Licenses)
+	}
+	if result.LicenseFile != "LICENSE" {
+		t.Errorf("LicenseFile = %q, want LICENSE", result.LicenseFile)
+	}
+	if len(result.Dependencies) != 2 {
+		t.Fatalf("Dependencies = %d, want 2", len(result.Dependencies))
+	}
+	if result.Dependencies[0].Name != "requests" || result.Dependencies[0].Scope != core.Runtime {
+		t.Errorf("runtime dependency = %#v", result.Dependencies[0])
+	}
+	if result.Dependencies[1].Name != "pytest" || result.Dependencies[1].Scope != core.Test {
+		t.Errorf("test dependency = %#v", result.Dependencies[1])
+	}
+}
+
 func TestPylockToml(t *testing.T) {
 	content, err := os.ReadFile("../../testdata/pypi/pylock.toml")
 	if err != nil {
