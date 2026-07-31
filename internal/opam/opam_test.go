@@ -16,6 +16,10 @@ depends: [
   "ocaml" {>= "5.0"}
   # "commented-out"
   "dune" {build}
+  "alcotest" {with-test & >= "1.8.0"}
+  "cmdliner" {>= "1.0" & < "2.0"}
+  "unix" {os != "win32"}
+  "ocamlformat" {with-dev-setup} {>= "0.27.0"}
 ]
 `)
 
@@ -32,12 +36,16 @@ depends: [
 	if !slices.Equal(result.Licenses, []string{"MIT", "ISC"}) {
 		t.Errorf("Licenses = %q, want [MIT ISC]", result.Licenses)
 	}
-	if len(result.Dependencies) != 2 {
-		t.Fatalf("Dependencies = %d, want 2", len(result.Dependencies))
+	if len(result.Dependencies) != 6 {
+		t.Fatalf("Dependencies = %d, want 6", len(result.Dependencies))
 	}
 	want := []core.Dependency{
-		{Name: "ocaml", Scope: core.Runtime, Direct: true},
-		{Name: "dune", Scope: core.Runtime, Direct: true},
+		{Name: "ocaml", Version: ">= 5.0", Scope: core.Runtime, Direct: true},
+		{Name: "dune", Scope: core.Build, Direct: true},
+		{Name: "alcotest", Version: ">= 1.8.0", Scope: core.Test, Direct: true},
+		{Name: "cmdliner", Version: ">= 1.0 & < 2.0", Scope: core.Runtime, Direct: true},
+		{Name: "unix", Scope: core.Runtime, Direct: true},
+		{Name: "ocamlformat", Version: ">= 0.27.0", Scope: core.Development, Direct: true},
 	}
 	if !slices.Equal(result.Dependencies, want) {
 		t.Errorf("Dependencies = %#v, want %#v", result.Dependencies, want)

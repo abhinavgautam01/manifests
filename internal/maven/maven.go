@@ -89,7 +89,8 @@ func (p *pomXMLParser) ParseInRoot(filename string, content []byte, fsRoot strin
 
 func relativeLicensePath(value string) string {
 	value = strings.TrimSpace(value)
-	if value == "" || filepath.IsAbs(value) || strings.Contains(value, "://") || strings.HasPrefix(value, "//") {
+	if value == "" || strings.Contains(value, "${") || filepath.IsAbs(value) ||
+		strings.Contains(value, "://") || strings.HasPrefix(value, "//") {
 		return ""
 	}
 	base := strings.ToLower(filepath.Base(value))

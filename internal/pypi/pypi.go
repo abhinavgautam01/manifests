@@ -282,7 +282,8 @@ func (p *pyprojectParser) Parse(filename string, content []byte) (*core.Result, 
 		} `toml:"project"`
 	}
 
-	if _, err := toml.Decode(string(content), &pyproject); err != nil {
+	metadata, err := toml.Decode(string(content), &pyproject)
+	if err != nil {
 		return nil, &core.ParseError{Filename: filename, Err: err}
 	}
 
@@ -371,7 +372,9 @@ func (p *pyprojectParser) Parse(filename string, content []byte) (*core.Result, 
 	}
 
 	licenses, licenseFile := pyprojectLicenses(pyproject.Project.License, pyproject.Project.LicenseFiles, pyproject.Project.Classifiers)
-	if pyproject.Project.Name == "" && pyproject.Tool.Poetry.License != "" {
+	projectDeclaresLicense := metadata.IsDefined("project", "license") ||
+		metadata.IsDefined("project", "license-files") || len(licenses) > 0
+	if !projectDeclaresLicense && pyproject.Tool.Poetry.License != "" {
 		licenses = []string{pyproject.Tool.Poetry.License}
 	}
 
