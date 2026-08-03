@@ -2,6 +2,7 @@ package pypi
 
 import (
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/git-pkgs/manifests/internal/core"
@@ -220,6 +221,42 @@ func TestPyprojectToml(t *testing.T) {
 		if dep.Scope != exp.scope {
 			t.Errorf("%s scope = %v, want %v", exp.name, dep.Scope, exp.scope)
 		}
+	}
+}
+
+func TestPyprojectPoetryLicenseFallback(t *testing.T) {
+	content := []byte(`[project]
+name = "hybrid-project"
+version = "1.0.0"
+
+[tool.poetry]
+license = "MIT"
+`)
+
+	result, err := (&pyprojectParser{}).Parse("pyproject.toml", content)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if !slices.Equal(result.Licenses, []string{"MIT"}) {
+		t.Errorf("Licenses = %q, want [MIT]", result.Licenses)
+	}
+}
+
+func TestPyprojectLicenseTakesPrecedenceOverPoetry(t *testing.T) {
+	content := []byte(`[project]
+name = "hybrid-project"
+license = "Apache-2.0"
+
+[tool.poetry]
+license = "MIT"
+`)
+
+	result, err := (&pyprojectParser{}).Parse("pyproject.toml", content)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if !slices.Equal(result.Licenses, []string{"Apache-2.0"}) {
+		t.Errorf("Licenses = %q, want [Apache-2.0]", result.Licenses)
 	}
 }
 
@@ -564,6 +601,53 @@ func TestSetupPy(t *testing.T) {
 		if dep.Scope != core.Runtime {
 			t.Errorf("%s scope = %v, want Runtime", name, dep.Scope)
 		}
+	}
+}
+
+func TestSetupCfg(t *testing.T) {
+	content := []byte(`[metadata]
+name = example
+version = 1.2.3
+license = GPL (>= 2, < 3)
+license_files =
+    LICENSE
+classifiers =
+    Development Status :: 5 - Production/Stable
+    License :: OSI Approved :: MIT License
+
+[options]
+install_requires =
+    requests>=2,<3
+
+[options.extras_require]
+test =
+    pytest>=8
+`)
+
+	result, err := (&setupCfgParser{}).Parse("setup.cfg", content)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if result.Name != "example" || result.Version != "1.2.3" {
+		t.Errorf("identity = %q %q, want example 1.2.3", result.Name, result.Version)
+	}
+	if len(result.Licenses) != 2 || result.Licenses[0] != "GPL (>= 2, < 3)" ||
+		result.Licenses[1] != "License :: OSI Approved :: MIT License" {
+		t.Errorf("Licenses = %q", result.Licenses)
+	}
+	if result.LicenseFile != "LICENSE" {
+		t.Errorf("LicenseFile = %q, want LICENSE", result.LicenseFile)
+	}
+	if len(result.Dependencies) != 2 {
+		t.Fatalf("Dependencies = %d, want 2", len(result.Dependencies))
+	}
+	if result.Dependencies[0].Name != "requests" ||
+		result.Dependencies[0].Version != ">=2,<3" ||
+		result.Dependencies[0].Scope != core.Runtime {
+		t.Errorf("runtime dependency = %#v", result.Dependencies[0])
+	}
+	if result.Dependencies[1].Name != "pytest" || result.Dependencies[1].Scope != core.Test {
+		t.Errorf("test dependency = %#v", result.Dependencies[1])
 	}
 }
 

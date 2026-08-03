@@ -39,7 +39,12 @@ type Result struct {
 	// that only list dependencies (Gemfile, requirements.txt, etc.).
 	Name string
 	// Version is the package's own version as declared in the manifest.
-	Version      string
+	Version string
+	// Licenses holds the package's declared license values, without
+	// normalization.
+	Licenses []string
+	// LicenseFile is a manifest-relative path to a declared license file.
+	LicenseFile  string
 	Dependencies []Dependency
 }
 

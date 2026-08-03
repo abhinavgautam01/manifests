@@ -68,7 +68,39 @@ func (p *pomXMLParser) ParseInRoot(filename string, content []byte, fsRoot strin
 	if ep.GAV.GroupID != "" {
 		selfName = ep.GAV.GroupID + ":" + ep.GAV.ArtifactID
 	}
-	return &core.Result{Name: selfName, Version: ep.GAV.Version, Dependencies: deps}, nil
+	var licenses []string
+	var licenseFile string
+	for _, license := range ep.Licenses {
+		if name := strings.TrimSpace(license.Name); name != "" {
+			licenses = append(licenses, name)
+		}
+		if licenseFile == "" {
+			licenseFile = relativeLicensePath(license.URL)
+		}
+	}
+	return &core.Result{
+		Name:         selfName,
+		Version:      ep.GAV.Version,
+		Licenses:     licenses,
+		LicenseFile:  licenseFile,
+		Dependencies: deps,
+	}, nil
+}
+
+func relativeLicensePath(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.Contains(value, "${") || filepath.IsAbs(value) ||
+		strings.Contains(value, "://") || strings.HasPrefix(value, "//") {
+		return ""
+	}
+	base := strings.ToLower(filepath.Base(value))
+	if strings.Contains(base, "license") ||
+		strings.Contains(base, "licence") ||
+		strings.Contains(base, "copying") ||
+		strings.Contains(base, "notice") {
+		return value
+	}
+	return ""
 }
 
 func mapScope(scope string, optional bool) core.Scope {

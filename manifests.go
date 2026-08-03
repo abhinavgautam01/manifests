@@ -50,7 +50,14 @@ type ParseResult struct {
 	Name string
 	// Version is the package's own version as declared in the
 	// manifest, when present.
-	Version      string
+	Version string
+	// Licenses holds the package's declared license values, verbatim as
+	// written in the manifest. Empty when the format has no license field
+	// or none is set. Scalar formats produce a single-element slice.
+	Licenses []string
+	// LicenseFile is a manifest-relative path to a license file when the
+	// format declares one instead of, or as well as, an expression.
+	LicenseFile  string
 	Dependencies []Dependency
 }
 
@@ -105,6 +112,8 @@ func Parse(filename string, content []byte, opts ...Options) (*ParseResult, erro
 		Kind:         kind,
 		Name:         res.Name,
 		Version:      res.Version,
+		Licenses:     res.Licenses,
+		LicenseFile:  res.LicenseFile,
 		Dependencies: res.Dependencies,
 	}, nil
 }

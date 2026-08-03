@@ -65,6 +65,29 @@ func TestPomXML(t *testing.T) {
 	}
 }
 
+func TestPomLicenseFileRejectsUnresolvedProperty(t *testing.T) {
+	content := []byte(`<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.example</groupId>
+  <artifactId>example</artifactId>
+  <version>1.0.0</version>
+  <licenses>
+    <license>
+      <name>MIT</name>
+      <url>${project.url}/LICENSE</url>
+    </license>
+  </licenses>
+</project>`)
+
+	result, err := (&pomXMLParser{}).Parse("pom.xml", content)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if result.LicenseFile != "" {
+		t.Errorf("LicenseFile = %q, want empty for unresolved property", result.LicenseFile)
+	}
+}
+
 func TestBuildGradle(t *testing.T) {
 	content, err := os.ReadFile("../../testdata/maven/build.gradle")
 	if err != nil {

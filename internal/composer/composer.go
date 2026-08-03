@@ -16,6 +16,7 @@ type composerJSONParser struct{}
 type composerJSON struct {
 	Name       string            `json:"name"`
 	Version    string            `json:"version"`
+	License    any               `json:"license"`
 	Require    map[string]string `json:"require"`
 	RequireDev map[string]string `json:"require-dev"`
 }
@@ -59,7 +60,30 @@ func (p *composerJSONParser) Parse(filename string, content []byte) (*core.Resul
 		})
 	}
 
-	return &core.Result{Name: composer.Name, Version: composer.Version, Dependencies: deps}, nil
+	return &core.Result{
+		Name:         composer.Name,
+		Version:      composer.Version,
+		Licenses:     composerLicenses(composer.License),
+		Dependencies: deps,
+	}, nil
+}
+
+func composerLicenses(value any) []string {
+	switch license := value.(type) {
+	case string:
+		if license != "" {
+			return []string{license}
+		}
+	case []any:
+		licenses := make([]string, 0, len(license))
+		for _, item := range license {
+			if text, ok := item.(string); ok && text != "" {
+				licenses = append(licenses, text)
+			}
+		}
+		return licenses
+	}
+	return nil
 }
 
 // composerLockParser parses composer.lock files.

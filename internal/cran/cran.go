@@ -70,7 +70,39 @@ func (p *descriptionParser) Parse(filename string, content []byte) (*core.Result
 		}
 	}
 
-	return &core.Result{Name: fields["Package"], Version: fields["Version"], Dependencies: deps}, nil
+	licenses, licenseFile := parseRLicense(fields["License"])
+	return &core.Result{
+		Name:         fields["Package"],
+		Version:      fields["Version"],
+		Licenses:     licenses,
+		LicenseFile:  licenseFile,
+		Dependencies: deps,
+	}, nil
+}
+
+func parseRLicense(value string) ([]string, string) {
+	var licenses []string
+	var licenseFile string
+	for _, alternative := range strings.Split(value, "|") {
+		alternative = strings.TrimSpace(alternative)
+		if alternative == "" {
+			continue
+		}
+		lower := strings.ToLower(alternative)
+		if idx := strings.Index(lower, "file "); idx >= 0 {
+			if licenseFile == "" {
+				fileFields := strings.Fields(alternative[idx+len("file "):])
+				if len(fileFields) > 0 {
+					licenseFile = fileFields[0]
+				}
+			}
+			alternative = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(alternative[:idx]), "+"))
+		}
+		if alternative != "" {
+			licenses = append(licenses, alternative)
+		}
+	}
+	return licenses, licenseFile
 }
 
 // parseDescriptionFields parses DESCRIPTION file key-value pairs.

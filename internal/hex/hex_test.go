@@ -94,3 +94,21 @@ func TestMixLock(t *testing.T) {
 		}
 	}
 }
+
+func TestMixOneLinePackageLicenses(t *testing.T) {
+	content := []byte(`defmodule Example.MixProject do
+  use Mix.Project
+  def project, do: [app: :example, version: "1.0.0", package: package()]
+  defp package(), do: [licenses: ["MIT", "Apache-2.0"]]
+end`)
+
+	result, err := (&mixExsParser{}).Parse("mix.exs", content)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(result.Licenses) != 2 ||
+		result.Licenses[0] != "MIT" ||
+		result.Licenses[1] != "Apache-2.0" {
+		t.Errorf("Licenses = %q, want [MIT Apache-2.0]", result.Licenses)
+	}
+}

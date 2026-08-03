@@ -170,6 +170,12 @@ var (
 	podspecNameRegex = regexp.MustCompile(`\.name\s*=\s*["']([^"']+)["']`)
 	// s.version = "1.0.0"
 	podspecVersionRegex = regexp.MustCompile(`\.version\s*=\s*["']([^"']+)["']`)
+	// s.license = "MIT"
+	podspecLicenseRegex = regexp.MustCompile(`\.license\s*=\s*["']([^"']+)["']`)
+	// s.license = { :type => "MIT", :file => "LICENSE" }
+	podspecLicenseHashRegex = regexp.MustCompile(`(?s)\.license\s*=\s*\{([^}]*)\}`)
+	podspecLicenseTypeRegex = regexp.MustCompile(`(?::type|["']type["']|\btype)\s*(?:=>|:)\s*["']([^"']+)["']`)
+	podspecLicenseFileRegex = regexp.MustCompile(`(?::file|["']file["']|\bfile)\s*(?:=>|:)\s*["']([^"']+)["']`)
 )
 
 func (p *podspecParser) Parse(filename string, content []byte) (*core.Result, error) {
@@ -182,6 +188,18 @@ func (p *podspecParser) Parse(filename string, content []byte) (*core.Result, er
 	}
 	if m := podspecVersionRegex.FindStringSubmatch(text); m != nil {
 		selfVersion = m[1]
+	}
+	var licenses []string
+	var licenseFile string
+	if m := podspecLicenseRegex.FindStringSubmatch(text); m != nil {
+		licenses = []string{m[1]}
+	} else if hash := podspecLicenseHashRegex.FindStringSubmatch(text); hash != nil {
+		if m := podspecLicenseTypeRegex.FindStringSubmatch(hash[1]); m != nil {
+			licenses = []string{m[1]}
+		}
+		if m := podspecLicenseFileRegex.FindStringSubmatch(hash[1]); m != nil {
+			licenseFile = m[1]
+		}
 	}
 
 	for _, match := range podspecDepRegex.FindAllStringSubmatch(text, -1) {
@@ -199,5 +217,11 @@ func (p *podspecParser) Parse(filename string, content []byte) (*core.Result, er
 		})
 	}
 
-	return &core.Result{Name: selfName, Version: selfVersion, Dependencies: deps}, nil
+	return &core.Result{
+		Name:         selfName,
+		Version:      selfVersion,
+		Licenses:     licenses,
+		LicenseFile:  licenseFile,
+		Dependencies: deps,
+	}, nil
 }

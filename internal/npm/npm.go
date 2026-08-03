@@ -24,10 +24,16 @@ type npmPackageJSONParser struct{}
 type packageJSON struct {
 	Name                 string         `json:"name"`
 	Version              string         `json:"version"`
+	License              any            `json:"license"`
+	Licenses             []npmLicense   `json:"licenses"`
 	Dependencies         map[string]any `json:"dependencies"`
 	DevDependencies      map[string]any `json:"devDependencies"`
 	OptionalDependencies map[string]any `json:"optionalDependencies"`
 	PeerDependencies     map[string]any `json:"peerDependencies"`
+}
+
+type npmLicense struct {
+	Type string `json:"type"`
 }
 
 func (p *npmPackageJSONParser) Parse(filename string, content []byte) (*core.Result, error) {
@@ -106,7 +112,32 @@ func (p *npmPackageJSONParser) Parse(filename string, content []byte) (*core.Res
 		})
 	}
 
-	return &core.Result{Name: pkg.Name, Version: pkg.Version, Dependencies: deps}, nil
+	return &core.Result{
+		Name:         pkg.Name,
+		Version:      pkg.Version,
+		Licenses:     npmLicenses(pkg.License, pkg.Licenses),
+		Dependencies: deps,
+	}, nil
+}
+
+func npmLicenses(license any, legacy []npmLicense) []string {
+	var licenses []string
+	switch value := license.(type) {
+	case string:
+		if value != "" {
+			licenses = append(licenses, value)
+		}
+	case map[string]any:
+		if valueType, ok := value["type"].(string); ok && valueType != "" {
+			licenses = append(licenses, valueType)
+		}
+	}
+	for _, value := range legacy {
+		if value.Type != "" {
+			licenses = append(licenses, value.Type)
+		}
+	}
+	return licenses
 }
 
 // isNpmComment checks if a dependency name is actually a comment.
