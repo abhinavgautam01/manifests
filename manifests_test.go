@@ -58,6 +58,28 @@ func TestParseAllEcosystems(t *testing.T) {
 	}
 }
 
+func TestEcosystems(t *testing.T) {
+	got := Ecosystems()
+
+	if len(got) == 0 {
+		t.Fatal("Ecosystems() returned empty list")
+	}
+
+	seen := make(map[string]bool)
+	for _, e := range got {
+		if seen[e] {
+			t.Errorf("duplicate ecosystem %q", e)
+		}
+		seen[e] = true
+	}
+
+	for _, want := range []string{"npm", "gem", "cargo", "golang", "pypi", "maven"} {
+		if !slices.Contains(got, want) {
+			t.Errorf("Ecosystems() missing %q", want)
+		}
+	}
+}
+
 func TestParseDeclaredLicenses(t *testing.T) {
 	testCases := []struct {
 		name        string
