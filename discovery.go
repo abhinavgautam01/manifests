@@ -1,0 +1,237 @@
+package manifests
+
+import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"path"
+	"sort"
+	"strings"
+
+	"github.com/bmatcuk/doublestar/v4"
+)
+
+// RepositoryReader provides bounded access to files in a repository. Paths and
+// glob patterns use forward slashes and are relative to the repository root.
+// ReadFile should return an error matching fs.ErrNotExist for absent files.
+type RepositoryReader interface {
+	ReadFile(name string) ([]byte, error)
+	Glob(pattern string) ([]string, error)
+}
+
+// FSReader adapts an fs.FS to RepositoryReader. It supports recursive ** globs.
+type FSReader struct {
+	fsys fs.FS
+}
+
+// NewFSReader returns a repository reader rooted at fsys. Use os.DirFS to
+// discover manifests in a working tree.
+func NewFSReader(fsys fs.FS) *FSReader {
+	return &FSReader{fsys: fsys}
+}
+
+// ReadFile reads a repository-relative file.
+func (r *FSReader) ReadFile(name string) ([]byte, error) {
+	if r == nil || r.fsys == nil {
+		return nil, errors.New("nil repository filesystem")
+	}
+	return fs.ReadFile(r.fsys, name)
+}
+
+// Glob returns files matching a repository-relative doublestar pattern.
+func (r *FSReader) Glob(pattern string) ([]string, error) {
+	if r == nil || r.fsys == nil {
+		return nil, errors.New("nil repository filesystem")
+	}
+	return doublestar.Glob(r.fsys, pattern,
+		doublestar.WithFilesOnly(),
+		doublestar.WithFailOnIOErrors(),
+	)
+}
+
+// DiscoveredManifest identifies a project or workspace manifest. ParentPath is
+// the repository-relative workspace configuration that selected a nested
+// manifest; it is empty for root and path-based manifests.
+type DiscoveredManifest struct {
+	Path       string
+	Ecosystem  string
+	Kind       Kind
+	ParentPath string
+}
+
+type manifestDiscovery struct {
+	reader RepositoryReader
+	items  map[discoveredManifestKey]DiscoveredManifest
+}
+
+type discoveredManifestKey struct {
+	path      string
+	ecosystem string
+	kind      Kind
+}
+
+// DiscoverManifests returns the project and workspace manifests selected from
+// a rooted repository. It does not parse dependency declarations.
+func DiscoverManifests(reader RepositoryReader) ([]DiscoveredManifest, error) {
+	if reader == nil {
+		return nil, errors.New("nil repository reader")
+	}
+
+	discovery := &manifestDiscovery{
+		reader: reader,
+		items:  make(map[discoveredManifestKey]DiscoveredManifest),
+	}
+	for _, pattern := range []string{"*", ".github/workflows/*.yml", ".github/workflows/*.yaml"} {
+		if err := discovery.addMatches(pattern, ""); err != nil {
+			return nil, fmt.Errorf("discovering manifests matching %q: %w", pattern, err)
+		}
+	}
+
+	if err := discovery.discoverCargoWorkspace(); err != nil {
+		return nil, err
+	}
+	if err := discovery.discoverGoWorkspace(); err != nil {
+		return nil, err
+	}
+	if err := discovery.discoverNPMWorkspace(); err != nil {
+		return nil, err
+	}
+	if err := discovery.discoverPnpmWorkspace(); err != nil {
+		return nil, err
+	}
+
+	return discovery.sorted(), nil
+}
+
+func (d *manifestDiscovery) addMatches(pattern, parentPath string) error {
+	matches, err := d.reader.Glob(pattern)
+	if err != nil {
+		return err
+	}
+	sort.Strings(matches)
+	for _, match := range matches {
+		d.add(match, parentPath)
+	}
+	return nil
+}
+
+func (d *manifestDiscovery) add(manifestPath, parentPath string) {
+	manifestPath, ok := normalizeRepositoryPath(manifestPath)
+	if !ok {
+		return
+	}
+	ecosystem, kind, ok := Identify(manifestPath)
+	if !ok {
+		return
+	}
+	if parentPath != "" {
+		var valid bool
+		parentPath, valid = normalizeRepositoryPath(parentPath)
+		if !valid {
+			return
+		}
+	}
+
+	key := discoveredManifestKey{path: manifestPath, ecosystem: ecosystem, kind: kind}
+	item := DiscoveredManifest{
+		Path:       manifestPath,
+		Ecosystem:  ecosystem,
+		Kind:       kind,
+		ParentPath: parentPath,
+	}
+	if current, exists := d.items[key]; !exists || current.ParentPath != "" && parentPath == "" {
+		d.items[key] = item
+	}
+}
+
+func (d *manifestDiscovery) addWorkspaceManifests(
+	includePatterns, excludePatterns []string,
+	manifestName, parentPath string,
+) error {
+	excluded, err := d.workspaceManifestPaths(excludePatterns, manifestName)
+	if err != nil {
+		return err
+	}
+	included, err := d.workspaceManifestPaths(includePatterns, manifestName)
+	if err != nil {
+		return err
+	}
+
+	paths := make([]string, 0, len(included))
+	for manifestPath := range included {
+		if _, skip := excluded[manifestPath]; !skip {
+			paths = append(paths, manifestPath)
+		}
+	}
+	sort.Strings(paths)
+	for _, manifestPath := range paths {
+		d.add(manifestPath, parentPath)
+	}
+	return nil
+}
+
+func (d *manifestDiscovery) workspaceManifestPaths(patterns []string, manifestName string) (map[string]struct{}, error) {
+	result := make(map[string]struct{})
+	for _, pattern := range patterns {
+		pattern, ok := normalizeRepositoryPattern(pattern)
+		if !ok {
+			continue
+		}
+		matches, err := d.reader.Glob(path.Join(pattern, manifestName))
+		if err != nil {
+			return nil, fmt.Errorf("expanding workspace pattern %q: %w", pattern, err)
+		}
+		for _, match := range matches {
+			if normalized, valid := normalizeRepositoryPath(match); valid {
+				result[normalized] = struct{}{}
+			}
+		}
+	}
+	return result, nil
+}
+
+func (d *manifestDiscovery) readOptional(name string) ([]byte, bool, error) {
+	content, err := d.reader.ReadFile(name)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return content, true, nil
+}
+
+func (d *manifestDiscovery) sorted() []DiscoveredManifest {
+	result := make([]DiscoveredManifest, 0, len(d.items))
+	for _, item := range d.items {
+		result = append(result, item)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Path != result[j].Path {
+			return result[i].Path < result[j].Path
+		}
+		if result[i].Ecosystem != result[j].Ecosystem {
+			return result[i].Ecosystem < result[j].Ecosystem
+		}
+		return result[i].Kind < result[j].Kind
+	})
+	return result
+}
+
+func normalizeRepositoryPath(value string) (string, bool) {
+	value = strings.TrimSpace(strings.ReplaceAll(value, `\`, "/"))
+	if value == "" || strings.HasPrefix(value, "/") {
+		return "", false
+	}
+	value = path.Clean(value)
+	if value == "." || value == ".." || strings.HasPrefix(value, "../") {
+		return "", false
+	}
+	return value, true
+}
+
+func normalizeRepositoryPattern(value string) (string, bool) {
+	value = strings.TrimSpace(strings.ReplaceAll(value, `\`, "/"))
+	value = strings.TrimSuffix(value, "/")
+	return normalizeRepositoryPath(value)
+}
