@@ -159,6 +159,23 @@ Returns a list of supported ecosystems.
 func Ecosystems() []string
 ```
 
+### DiscoverManifests
+
+Discovers root manifests, GitHub Actions workflows, and declared Cargo, Go,
+npm/Yarn, and pnpm workspace members. Discovery is repository-aware while
+`Parse` remains a pure single-file operation.
+
+```go
+reader := manifests.NewFSReader(os.DirFS("."))
+found, warnings := manifests.DiscoverManifests(reader)
+```
+
+Callers reading historical revisions can implement `RepositoryReader` over a
+Git tree. Paths and glob patterns are rooted, slash-separated repository paths.
+Workspace records set `ParentPath` to the configuration that selected them.
+Warnings report malformed workspace configuration or failed lookups without
+discarding manifests that were discovered successfully.
+
 ## Types
 
 ### Dependency
