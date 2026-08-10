@@ -8,7 +8,6 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/git-pkgs/pom v0.1.5
 	github.com/git-pkgs/purl v0.1.15
-	golang.org/x/mod v0.38.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

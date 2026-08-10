@@ -167,12 +167,14 @@ npm/Yarn, and pnpm workspace members. Discovery is repository-aware while
 
 ```go
 reader := manifests.NewFSReader(os.DirFS("."))
-found, err := manifests.DiscoverManifests(reader)
+found, warnings := manifests.DiscoverManifests(reader)
 ```
 
 Callers reading historical revisions can implement `RepositoryReader` over a
 Git tree. Paths and glob patterns are rooted, slash-separated repository paths.
 Workspace records set `ParentPath` to the configuration that selected them.
+Warnings report malformed workspace configuration or failed lookups without
+discarding manifests that were discovered successfully.
 
 ## Types
 

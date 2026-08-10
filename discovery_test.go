@@ -21,9 +21,9 @@ func TestDiscoverManifestsRootAndKnownPaths(t *testing.T) {
 		"package.json":              `{"name":"root"}`,
 	})
 
-	got, err := DiscoverManifests(reader)
-	if err != nil {
-		t.Fatalf("DiscoverManifests: %v", err)
+	got, warnings := DiscoverManifests(reader)
+	if len(warnings) != 0 {
+		t.Fatalf("DiscoverManifests warnings: %v", warnings)
 	}
 	want := []DiscoveredManifest{
 		{Path: ".github/workflows/ci.yaml", Ecosystem: "github-actions", Kind: Manifest},
@@ -66,9 +66,9 @@ use (
 		"packages/group/fixtures/package.json": `{"name":"fixture"}`,
 	})
 
-	got, err := DiscoverManifests(reader)
-	if err != nil {
-		t.Fatalf("DiscoverManifests: %v", err)
+	got, warnings := DiscoverManifests(reader)
+	if len(warnings) != 0 {
+		t.Fatalf("DiscoverManifests warnings: %v", warnings)
 	}
 	want := []DiscoveredManifest{
 		{Path: "Cargo.toml", Ecosystem: "cargo", Kind: Manifest},
@@ -101,9 +101,9 @@ func TestDiscoverManifestsNPMWorkspaceForms(t *testing.T) {
 				"packages/api/package.json": `{"name":"api"}`,
 			})
 
-			got, err := DiscoverManifests(reader)
-			if err != nil {
-				t.Fatalf("DiscoverManifests: %v", err)
+			got, warnings := DiscoverManifests(reader)
+			if len(warnings) != 0 {
+				t.Fatalf("DiscoverManifests warnings: %v", warnings)
 			}
 			want := []DiscoveredManifest{
 				{Path: "package.json", Ecosystem: "npm", Kind: Manifest},
@@ -124,9 +124,9 @@ func TestDiscoverManifestsRejectsOutsideWorkspaceMembers(t *testing.T) {
 		"nested/other/Cargo.toml": `[package]`,
 	})
 
-	got, err := DiscoverManifests(reader)
-	if err != nil {
-		t.Fatalf("DiscoverManifests: %v", err)
+	got, warnings := DiscoverManifests(reader)
+	if len(warnings) != 0 {
+		t.Fatalf("DiscoverManifests warnings: %v", warnings)
 	}
 	want := []DiscoveredManifest{{Path: "Cargo.toml", Ecosystem: "cargo", Kind: Manifest}}
 	if !slices.Equal(got, want) {
@@ -134,7 +134,7 @@ func TestDiscoverManifestsRejectsOutsideWorkspaceMembers(t *testing.T) {
 	}
 }
 
-func TestDiscoverManifestsReportsConfigurationErrors(t *testing.T) {
+func TestDiscoverManifestsReturnsPartialResultsWithConfigurationWarnings(t *testing.T) {
 	tests := []struct {
 		name      string
 		path      string
@@ -142,25 +142,53 @@ func TestDiscoverManifestsReportsConfigurationErrors(t *testing.T) {
 		wantError string
 	}{
 		{name: "cargo", path: "Cargo.toml", content: `[workspace`, wantError: "parsing Cargo workspace configuration"},
-		{name: "go", path: "go.work", content: `use (`, wantError: "parsing Go workspace configuration"},
 		{name: "npm", path: "package.json", content: `{"workspaces":true}`, wantError: "parsing npm workspace configuration"},
 		{name: "pnpm", path: "pnpm-workspace.yaml", content: `packages: true`, wantError: "parsing pnpm workspace configuration"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := DiscoverManifests(mapFSReader(map[string]string{test.path: test.content}))
-			if err == nil || !strings.Contains(err.Error(), test.wantError) {
-				t.Fatalf("DiscoverManifests() error = %v, want %q", err, test.wantError)
+			got, warnings := DiscoverManifests(mapFSReader(map[string]string{
+				test.path:          test.content,
+				"requirements.txt": "requests==2.0.0",
+			}))
+			if len(warnings) != 1 || !strings.Contains(warnings[0].Error(), test.wantError) {
+				t.Fatalf("DiscoverManifests() warnings = %v, want one containing %q", warnings, test.wantError)
+			}
+			if !slices.Contains(got, DiscoveredManifest{Path: "requirements.txt", Ecosystem: "pypi", Kind: Manifest}) {
+				t.Fatalf("DiscoverManifests() = %+v, want valid root manifest alongside warning", got)
 			}
 		})
 	}
 }
 
-func TestDiscoverManifestsReaderErrors(t *testing.T) {
+func TestDiscoverManifestsReaderWarnings(t *testing.T) {
 	wantErr := errors.New("glob failed")
-	_, err := DiscoverManifests(errorRepositoryReader{err: wantErr})
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("DiscoverManifests() error = %v, want wrapped %v", err, wantErr)
+	_, warnings := DiscoverManifests(errorRepositoryReader{err: wantErr})
+	if len(warnings) != 3 {
+		t.Fatalf("DiscoverManifests() warnings = %v, want three root glob warnings", warnings)
+	}
+	for _, warning := range warnings {
+		if !errors.Is(warning, wantErr) {
+			t.Fatalf("DiscoverManifests() warning = %v, want wrapped %v", warning, wantErr)
+		}
+	}
+}
+
+func TestDiscoverManifestsGoWorkspaceRootModule(t *testing.T) {
+	reader := mapFSReader(map[string]string{
+		"go.mod":  "module example.com/root\n",
+		"go.work": "go 1.25.0\nuse .\n",
+	})
+
+	got, warnings := DiscoverManifests(reader)
+	if len(warnings) != 0 {
+		t.Fatalf("DiscoverManifests warnings: %v", warnings)
+	}
+	want := []DiscoveredManifest{{
+		Path: "go.mod", Ecosystem: "golang", Kind: Manifest, ParentPath: "go.work",
+	}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("DiscoverManifests() = %+v, want %+v", got, want)
 	}
 }
 

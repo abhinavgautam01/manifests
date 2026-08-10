@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/BurntSushi/toml"
-	"golang.org/x/mod/modfile"
 	"gopkg.in/yaml.v3"
 )
 
@@ -50,18 +50,63 @@ func (d *manifestDiscovery) discoverGoWorkspace() error {
 		return nil
 	}
 
-	work, err := modfile.ParseWork(parentPath, content, nil)
-	if err != nil {
-		return fmt.Errorf("parsing Go workspace configuration: %w", err)
-	}
-	members := make([]string, 0, len(work.Use))
-	for _, use := range work.Use {
-		members = append(members, use.Path)
-	}
+	members := goWorkspaceMembers(content)
 	if err := d.addWorkspaceManifests(members, nil, "go.mod", parentPath); err != nil {
 		return fmt.Errorf("discovering Go workspace members: %w", err)
 	}
 	return nil
+}
+
+func goWorkspaceMembers(content []byte) []string {
+	var members []string
+	inUseBlock := false
+	for line := range strings.SplitSeq(string(content), "\n") {
+		line = stripGoWorkComment(line)
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+
+		if inUseBlock {
+			var closed bool
+			members, closed = appendGoWorkUseFields(members, fields)
+			inUseBlock = !closed
+			continue
+		}
+
+		if fields[0] != "use" {
+			continue
+		}
+		if len(fields) >= 2 && fields[1] == "(" {
+			var closed bool
+			members, closed = appendGoWorkUseFields(members, fields[2:])
+			inUseBlock = !closed
+			continue
+		}
+		members, _ = appendGoWorkUseFields(members, fields[1:])
+	}
+	return members
+}
+
+func appendGoWorkUseFields(members, fields []string) ([]string, bool) {
+	for _, field := range fields {
+		switch field {
+		case "(":
+			continue
+		case ")":
+			return members, true
+		default:
+			members = append(members, strings.Trim(field, `"'`))
+		}
+	}
+	return members, false
+}
+
+func stripGoWorkComment(line string) string {
+	if index := strings.Index(line, "//"); index >= 0 {
+		line = line[:index]
+	}
+	return strings.TrimSpace(line)
 }
 
 func (d *manifestDiscovery) discoverNPMWorkspace() error {

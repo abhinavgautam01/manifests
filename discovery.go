@@ -13,6 +13,7 @@ import (
 
 // RepositoryReader provides bounded access to files in a repository. Paths and
 // glob patterns use forward slashes and are relative to the repository root.
+// Glob must support the doublestar dialect, including recursive ** patterns.
 // ReadFile should return an error matching fs.ErrNotExist for absent files.
 type RepositoryReader interface {
 	ReadFile(name string) ([]byte, error)
@@ -71,36 +72,38 @@ type discoveredManifestKey struct {
 }
 
 // DiscoverManifests returns the project and workspace manifests selected from
-// a rooted repository. It does not parse dependency declarations.
-func DiscoverManifests(reader RepositoryReader) ([]DiscoveredManifest, error) {
+// a rooted repository. It does not parse dependency declarations. Warnings
+// report workspace configurations or lookups that could not be processed;
+// successfully discovered manifests are still returned.
+func DiscoverManifests(reader RepositoryReader) ([]DiscoveredManifest, []error) {
 	if reader == nil {
-		return nil, errors.New("nil repository reader")
+		return nil, []error{errors.New("nil repository reader")}
 	}
 
 	discovery := &manifestDiscovery{
 		reader: reader,
 		items:  make(map[discoveredManifestKey]DiscoveredManifest),
 	}
+	var warnings []error
 	for _, pattern := range []string{"*", ".github/workflows/*.yml", ".github/workflows/*.yaml"} {
 		if err := discovery.addMatches(pattern, ""); err != nil {
-			return nil, fmt.Errorf("discovering manifests matching %q: %w", pattern, err)
+			warnings = append(warnings, fmt.Errorf("discovering manifests matching %q: %w", pattern, err))
 		}
 	}
 
-	if err := discovery.discoverCargoWorkspace(); err != nil {
-		return nil, err
+	workspaceDiscoveries := []func() error{
+		discovery.discoverCargoWorkspace,
+		discovery.discoverGoWorkspace,
+		discovery.discoverNPMWorkspace,
+		discovery.discoverPnpmWorkspace,
 	}
-	if err := discovery.discoverGoWorkspace(); err != nil {
-		return nil, err
-	}
-	if err := discovery.discoverNPMWorkspace(); err != nil {
-		return nil, err
-	}
-	if err := discovery.discoverPnpmWorkspace(); err != nil {
-		return nil, err
+	for _, discover := range workspaceDiscoveries {
+		if err := discover(); err != nil {
+			warnings = append(warnings, err)
+		}
 	}
 
-	return discovery.sorted(), nil
+	return discovery.sorted(), warnings
 }
 
 func (d *manifestDiscovery) addMatches(pattern, parentPath string) error {
@@ -120,8 +123,8 @@ func (d *manifestDiscovery) add(manifestPath, parentPath string) {
 	if !ok {
 		return
 	}
-	ecosystem, kind, ok := Identify(manifestPath)
-	if !ok {
+	matches := IdentifyAll(manifestPath)
+	if len(matches) == 0 {
 		return
 	}
 	if parentPath != "" {
@@ -132,15 +135,17 @@ func (d *manifestDiscovery) add(manifestPath, parentPath string) {
 		}
 	}
 
-	key := discoveredManifestKey{path: manifestPath, ecosystem: ecosystem, kind: kind}
-	item := DiscoveredManifest{
-		Path:       manifestPath,
-		Ecosystem:  ecosystem,
-		Kind:       kind,
-		ParentPath: parentPath,
-	}
-	if current, exists := d.items[key]; !exists || current.ParentPath != "" && parentPath == "" {
-		d.items[key] = item
+	for _, match := range matches {
+		key := discoveredManifestKey{path: manifestPath, ecosystem: match.Ecosystem, kind: match.Kind}
+		item := DiscoveredManifest{
+			Path:       manifestPath,
+			Ecosystem:  match.Ecosystem,
+			Kind:       match.Kind,
+			ParentPath: parentPath,
+		}
+		if current, exists := d.items[key]; !exists || current.ParentPath == "" && parentPath != "" {
+			d.items[key] = item
+		}
 	}
 }
 
@@ -233,5 +238,8 @@ func normalizeRepositoryPath(value string) (string, bool) {
 func normalizeRepositoryPattern(value string) (string, bool) {
 	value = strings.TrimSpace(strings.ReplaceAll(value, `\`, "/"))
 	value = strings.TrimSuffix(value, "/")
+	if value == "." {
+		return value, true
+	}
 	return normalizeRepositoryPath(value)
 }
