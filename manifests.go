@@ -32,6 +32,7 @@ const (
 	Manifest   Kind = core.Manifest
 	Lockfile   Kind = core.Lockfile
 	Supplement Kind = core.Supplement
+	Vendor     Kind = core.Vendor
 
 	Runtime     Scope = core.Runtime
 	Development Scope = core.Development

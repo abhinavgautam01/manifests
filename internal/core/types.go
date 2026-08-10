@@ -1,13 +1,14 @@
 // Package core provides shared types and the parser registry.
 package core
 
-// Kind distinguishes manifest files from lockfiles.
+// Kind distinguishes manifest, lockfile, supplement, and vendor records.
 type Kind string
 
 const (
 	Manifest   Kind = "manifest"
 	Lockfile   Kind = "lockfile"
 	Supplement Kind = "supplement"
+	Vendor     Kind = "vendor"
 )
 
 // Scope indicates when a dependency is required.
