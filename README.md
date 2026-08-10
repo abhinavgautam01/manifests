@@ -179,9 +179,9 @@ discarding manifests that were discovered successfully.
 ### DiscoverVendors
 
 Discovers package-manager vendor roots and exact package identities stored in
-the repository. The initial implementation recognizes tracked npm
-`node_modules`, Go `vendor/modules.txt`, Python `[tool.vendoring]`
-configuration, and Cargo directory sources selected through
+the repository. The initial implementation recognizes npm `node_modules`
+trees exposed by the supplied reader, Go `vendor/modules.txt`, Python
+`[tool.vendoring]` configuration, and Cargo directory sources selected through
 `.cargo/config.toml` or `.cargo/config`.
 
 ```go

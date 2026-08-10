@@ -105,6 +105,9 @@ requirements = "src/example/_vendor/vendor.txt"
 requests==2.32.3
 idna[security] === 3.10 ; python_version >= "3.9"
 urllib3>=2.0
+charset-normalizer==3.4.*,!=3.4.2
+typing-extensions==4.12.*
+invalid====version
 --only-binary :all:
 requests==2.32.3
 `,

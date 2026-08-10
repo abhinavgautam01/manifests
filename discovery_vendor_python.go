@@ -11,7 +11,7 @@ import (
 )
 
 var pinnedPythonRequirement = regexp.MustCompile(
-	`^([A-Za-z0-9_.-]+)(?:\[[^]]+\])?\s*={2,3}\s*([^\s;\\]+)`,
+	`^([A-Za-z0-9_.-]+)(?:\[[^]]+\])?\s*(?:===|==)\s*([^\s;,\\=<>~]+)\s*(?:;|\\|#|$)`,
 )
 
 type pythonVendoringConfig struct {
@@ -94,7 +94,7 @@ func parsePinnedPythonRequirements(content []byte) []pythonVendorRequirement {
 			continue
 		}
 		match := pinnedPythonRequirement.FindStringSubmatch(line)
-		if match == nil {
+		if match == nil || strings.Contains(match[2], "*") {
 			continue
 		}
 		requirement := pythonVendorRequirement{name: match[1], version: match[2]}
