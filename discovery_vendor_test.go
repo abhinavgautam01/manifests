@@ -95,6 +95,33 @@ golang.org/x/text/language
 	}
 }
 
+func TestDiscoverVendorsGoSkipsModulesWithoutPackages(t *testing.T) {
+	reader := mapFSReader(map[string]string{
+		"vendor/modules.txt": `# example.com/unused v1.0.0 => ./unused
+# example.com/invalid not-a-version
+example.com/invalid/pkg
+# example.com/present v1.2.3
+## explicit; go 1.24
+example.com/present/pkg
+# example.com/also-unused v2.0.0
+## explicit; go 1.24
+`,
+	})
+
+	got, warnings := DiscoverVendors(reader)
+	if len(warnings) != 0 {
+		t.Fatalf("DiscoverVendors warnings: %v", warnings)
+	}
+	want := []VendoredDependency{{
+		Name: "example.com/present", Version: "v1.2.3", Ecosystem: "golang", Kind: Vendor,
+		PURL: makePURL("golang", "example.com/present", "v1.2.3", ""), RootPath: "vendor",
+		EvidencePath: "vendor/modules.txt",
+	}}
+	if !slices.Equal(got.Dependencies, want) {
+		t.Fatalf("DiscoverVendors dependencies = %+v, want %+v", got.Dependencies, want)
+	}
+}
+
 func TestDiscoverVendorsPython(t *testing.T) {
 	reader := mapFSReader(map[string]string{
 		"tools/pyproject.toml": `[tool.vendoring]
@@ -136,6 +163,31 @@ requests==2.32.3
 	}
 	if !slices.Equal(got.Roots, want.Roots) || !slices.Equal(got.Dependencies, want.Dependencies) {
 		t.Fatalf("DiscoverVendors() =\n%+v\nwant\n%+v", got, want)
+	}
+}
+
+func TestDiscoverVendorsPythonWarnsForDirectReferences(t *testing.T) {
+	reader := mapFSReader(map[string]string{
+		"pyproject.toml": `[tool.vendoring]
+destination = "_vendor"
+requirements = "vendor.txt"
+`,
+		"vendor.txt": `requests==2.32.3
+archspec @ git+https://github.com/archspec/archspec.git@4a8cb2a1c7d8e264c0a391f4d2d6b4235b3201b5
+`,
+	})
+
+	got, warnings := DiscoverVendors(reader)
+	if len(warnings) != 1 || !strings.Contains(warnings[0].Error(), "direct reference") {
+		t.Fatalf("DiscoverVendors warnings = %v, want unsupported direct reference warning", warnings)
+	}
+	want := []VendoredDependency{{
+		Name: "requests", Version: "2.32.3", Ecosystem: "pypi", Kind: Vendor,
+		PURL: makePURL("pypi", "requests", "2.32.3", ""), RootPath: "_vendor",
+		EvidencePath: "vendor.txt",
+	}}
+	if !slices.Equal(got.Dependencies, want) {
+		t.Fatalf("DiscoverVendors dependencies = %+v, want %+v", got.Dependencies, want)
 	}
 }
 
@@ -218,6 +270,42 @@ directory = "vendor"
 	}
 	if len(got.Dependencies) != 1 || got.Dependencies[0].Name != "current" {
 		t.Fatalf("DiscoverVendors dependencies = %+v, want only current", got.Dependencies)
+	}
+}
+
+func TestDiscoverVendorsCargoMergesAncestorConfiguration(t *testing.T) {
+	reader := mapFSReader(map[string]string{
+		".cargo/config.toml": `[source.vendored-sources]
+directory = "third_party/vendor"
+`,
+		"apps/api/.cargo/config.toml": `[source.crates-io]
+replace-with = "vendored-sources"
+`,
+		"third_party/vendor/serde-1.0.217/.cargo-checksum.json": `{}`,
+		"third_party/vendor/serde-1.0.217/Cargo.toml": `[package]
+name = "serde"
+version = "1.0.217"
+`,
+	})
+
+	got, warnings := DiscoverVendors(reader)
+	if len(warnings) != 0 {
+		t.Fatalf("DiscoverVendors warnings: %v", warnings)
+	}
+	want := VendorDiscovery{
+		Roots: []VendorRoot{{
+			Path:       "third_party/vendor",
+			Ecosystem:  "cargo",
+			ConfigPath: "apps/api/.cargo/config.toml",
+		}},
+		Dependencies: []VendoredDependency{{
+			Name: "serde", Version: "1.0.217", Ecosystem: "cargo", Kind: Vendor,
+			PURL: makePURL("cargo", "serde", "1.0.217", ""), RootPath: "third_party/vendor",
+			EvidencePath: "third_party/vendor/serde-1.0.217/Cargo.toml",
+		}},
+	}
+	if !slices.Equal(got.Roots, want.Roots) || !slices.Equal(got.Dependencies, want.Dependencies) {
+		t.Fatalf("DiscoverVendors() =\n%+v\nwant\n%+v", got, want)
 	}
 }
 

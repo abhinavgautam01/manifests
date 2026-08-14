@@ -10,8 +10,22 @@ import (
 )
 
 type cargoVendorSource struct {
-	ReplaceWith string `toml:"replace-with"`
-	Directory   string `toml:"directory"`
+	ReplaceWith         string `toml:"replace-with"`
+	Directory           string `toml:"directory"`
+	replaceConfigPath   string
+	directoryConfigPath string
+}
+
+type cargoVendorConfig struct {
+	path    string
+	baseDir string
+	sources map[string]cargoVendorSource
+}
+
+type cargoVendorDirectory struct {
+	path           string
+	configPath     string
+	definitionPath string
 }
 
 func (d *vendorDiscovery) discoverCargoVendors() []error {
@@ -20,6 +34,7 @@ func (d *vendorDiscovery) discoverCargoVendors() []error {
 	for _, configPath := range configs {
 		configSet[configPath] = true
 	}
+	parsedConfigs := make([]cargoVendorConfig, 0, len(configs))
 	for _, configPath := range configs {
 		if !strings.HasSuffix(configPath, ".toml") && configSet[configPath+".toml"] {
 			continue
@@ -36,38 +51,88 @@ func (d *vendorDiscovery) discoverCargoVendors() []error {
 			warnings = append(warnings, fmt.Errorf("parsing Cargo vendor configuration %s: %w", configPath, err))
 			continue
 		}
-
-		directories, sourceWarnings := activeCargoVendorDirectories(config.Sources)
-		for _, warning := range sourceWarnings {
-			warnings = append(warnings, fmt.Errorf("parsing Cargo vendor configuration %s: %w", configPath, warning))
+		for name, source := range config.Sources {
+			if source.ReplaceWith != "" {
+				source.replaceConfigPath = configPath
+			}
+			if source.Directory != "" {
+				source.directoryConfigPath = configPath
+			}
+			config.Sources[name] = source
 		}
-		baseDir := path.Dir(path.Dir(configPath))
+		parsedConfigs = append(parsedConfigs, cargoVendorConfig{
+			path: configPath, baseDir: cargoConfigBaseDir(configPath), sources: config.Sources,
+		})
+	}
+	sort.Slice(parsedConfigs, func(i, j int) bool {
+		leftDepth := strings.Count(parsedConfigs[i].baseDir, "/")
+		rightDepth := strings.Count(parsedConfigs[j].baseDir, "/")
+		if leftDepth != rightDepth {
+			return leftDepth < rightDepth
+		}
+		return parsedConfigs[i].path < parsedConfigs[j].path
+	})
+
+	for _, config := range parsedConfigs {
+		sources := mergedCargoVendorSources(parsedConfigs, config.baseDir)
+		directories, sourceWarnings := activeCargoVendorDirectories(sources)
+		for _, warning := range sourceWarnings {
+			warnings = append(warnings, fmt.Errorf("parsing Cargo vendor configuration %s: %w", config.path, warning))
+		}
 		for _, directory := range directories {
-			rootPath, ok := resolveRepositoryPath(baseDir, directory)
+			rootPath, ok := resolveRepositoryPath(cargoConfigBaseDir(directory.definitionPath), directory.path)
 			if !ok {
 				warnings = append(warnings, fmt.Errorf(
-					"cargo vendor configuration %s contains invalid directory path %q", configPath, directory,
+					"cargo vendor configuration %s contains invalid directory path %q",
+					directory.definitionPath, directory.path,
 				))
 				continue
 			}
-			d.addRoot(rootPath, "cargo", configPath)
+			d.addRoot(rootPath, "cargo", directory.configPath)
 			warnings = append(warnings, d.discoverCargoPackages(rootPath)...)
 		}
 	}
 	return warnings
 }
 
-func activeCargoVendorDirectories(sources map[string]cargoVendorSource) ([]string, []error) {
+func cargoConfigBaseDir(configPath string) string {
+	return path.Dir(path.Dir(configPath))
+}
+
+func mergedCargoVendorSources(configs []cargoVendorConfig, baseDir string) map[string]cargoVendorSource {
+	sources := make(map[string]cargoVendorSource)
+	for _, config := range configs {
+		if config.baseDir != "." && config.baseDir != baseDir && !strings.HasPrefix(baseDir, config.baseDir+"/") {
+			continue
+		}
+		for name, candidate := range config.sources {
+			source := sources[name]
+			if candidate.ReplaceWith != "" {
+				source.ReplaceWith = candidate.ReplaceWith
+				source.replaceConfigPath = candidate.replaceConfigPath
+			}
+			if candidate.Directory != "" {
+				source.Directory = candidate.Directory
+				source.directoryConfigPath = candidate.directoryConfigPath
+			}
+			sources[name] = source
+		}
+	}
+	return sources
+}
+
+func activeCargoVendorDirectories(sources map[string]cargoVendorSource) ([]cargoVendorDirectory, []error) {
 	names := make([]string, 0, len(sources))
 	for name := range sources {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 
-	directorySet := make(map[string]struct{})
+	directorySet := make(map[cargoVendorDirectory]struct{})
 	var warnings []error
 	for _, name := range names {
-		target := sources[name].ReplaceWith
+		selector := sources[name]
+		target := selector.ReplaceWith
 		seen := make(map[string]bool)
 		for target != "" {
 			if seen[target] {
@@ -81,17 +146,29 @@ func activeCargoVendorDirectories(sources map[string]cargoVendorSource) ([]strin
 				break
 			}
 			if source.Directory != "" {
-				directorySet[source.Directory] = struct{}{}
+				directorySet[cargoVendorDirectory{
+					path:           source.Directory,
+					configPath:     selector.replaceConfigPath,
+					definitionPath: source.directoryConfigPath,
+				}] = struct{}{}
 				break
 			}
 			target = source.ReplaceWith
 		}
 	}
-	directories := make([]string, 0, len(directorySet))
+	directories := make([]cargoVendorDirectory, 0, len(directorySet))
 	for directory := range directorySet {
 		directories = append(directories, directory)
 	}
-	sort.Strings(directories)
+	sort.Slice(directories, func(i, j int) bool {
+		if directories[i].path != directories[j].path {
+			return directories[i].path < directories[j].path
+		}
+		if directories[i].definitionPath != directories[j].definitionPath {
+			return directories[i].definitionPath < directories[j].definitionPath
+		}
+		return directories[i].configPath < directories[j].configPath
+	})
 	return directories, warnings
 }
 

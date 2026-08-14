@@ -14,6 +14,10 @@ var pinnedPythonRequirement = regexp.MustCompile(
 	`^([A-Za-z0-9_.-]+)(?:\[[^]]+\])?\s*(?:===|==)\s*([^\s;,\\=<>~]+)\s*(?:;|\\|#|$)`,
 )
 
+var directPythonRequirement = regexp.MustCompile(
+	`^([A-Za-z0-9_.-]+)(?:\[[^]]+\])?\s*@\s*\S+`,
+)
+
 type pythonVendoringConfig struct {
 	Destination  string `toml:"destination"`
 	Requirements string `toml:"requirements"`
@@ -55,7 +59,11 @@ func (d *vendorDiscovery) discoverPythonVendors() []error {
 			))
 			continue
 		}
-		for _, requirement := range parsePinnedPythonRequirements(requirements) {
+		parsedRequirements, requirementWarnings := parsePinnedPythonRequirements(requirements)
+		for _, warning := range requirementWarnings {
+			warnings = append(warnings, fmt.Errorf("parsing Python vendor requirements %s: %w", requirementsPath, warning))
+		}
+		for _, requirement := range parsedRequirements {
 			d.addDependency(rootPath, requirementsPath, "pypi", requirement.name, requirement.version)
 		}
 	}
@@ -85,8 +93,9 @@ type pythonVendorRequirement struct {
 	version string
 }
 
-func parsePinnedPythonRequirements(content []byte) []pythonVendorRequirement {
+func parsePinnedPythonRequirements(content []byte) ([]pythonVendorRequirement, []error) {
 	var requirements []pythonVendorRequirement
+	var warnings []error
 	seen := make(map[pythonVendorRequirement]bool)
 	for line := range strings.SplitSeq(string(content), "\n") {
 		line = strings.TrimSpace(line)
@@ -94,7 +103,15 @@ func parsePinnedPythonRequirements(content []byte) []pythonVendorRequirement {
 			continue
 		}
 		match := pinnedPythonRequirement.FindStringSubmatch(line)
-		if match == nil || strings.Contains(match[2], "*") {
+		if match == nil {
+			if directMatch := directPythonRequirement.FindStringSubmatch(line); directMatch != nil {
+				warnings = append(warnings, fmt.Errorf(
+					"vendored Python package %q uses an unsupported direct reference", directMatch[1],
+				))
+			}
+			continue
+		}
+		if strings.Contains(match[2], "*") {
 			continue
 		}
 		requirement := pythonVendorRequirement{name: match[1], version: match[2]}
@@ -103,5 +120,5 @@ func parsePinnedPythonRequirements(content []byte) []pythonVendorRequirement {
 			requirements = append(requirements, requirement)
 		}
 	}
-	return requirements
+	return requirements, warnings
 }
