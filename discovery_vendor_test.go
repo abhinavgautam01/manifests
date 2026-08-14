@@ -79,8 +79,8 @@ golang.org/x/text/language
 				RootPath: "services/api/vendor", EvidencePath: "services/api/vendor/modules.txt",
 			},
 			{
-				Name: "example.com/original", Version: "v1.0.0", Ecosystem: "golang", Kind: Vendor,
-				PURL:     makePURL("golang", "example.com/original", "v1.0.0", ""),
+				Name: "example.com/fork", Version: "v1.1.0", Ecosystem: "golang", Kind: Vendor,
+				PURL:     makePURL("golang", "example.com/fork", "v1.1.0", ""),
 				RootPath: "vendor", EvidencePath: "vendor/modules.txt",
 			},
 			{
@@ -98,6 +98,7 @@ golang.org/x/text/language
 func TestDiscoverVendorsGoSkipsModulesWithoutPackages(t *testing.T) {
 	reader := mapFSReader(map[string]string{
 		"vendor/modules.txt": `# example.com/unused v1.0.0 => ./unused
+example.com/unused
 # example.com/invalid not-a-version
 example.com/invalid/pkg
 # example.com/present v1.2.3

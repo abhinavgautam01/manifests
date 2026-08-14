@@ -40,22 +40,18 @@ func parseGoVendorModules(content []byte) []goVendorModule {
 	var modules []goVendorModule
 	seen := make(map[goVendorModule]bool)
 	var current goVendorModule
+	var packagePrefix string
 	for line := range strings.SplitSeq(string(content), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "# ") {
-			current = goVendorModule{}
-			fields := strings.Fields(strings.TrimPrefix(line, "# "))
-			if len(fields) < 2 || fields[0] == "=>" || fields[1] == "=>" || !goModuleVersion.MatchString(fields[1]) {
-				continue
-			}
-			current = goVendorModule{name: fields[0], version: fields[1]}
+			current, packagePrefix = parseGoVendorModuleHeader(strings.TrimPrefix(line, "# "))
 			continue
 		}
-		if current.name == "" || strings.HasPrefix(line, "#") {
+		if packagePrefix == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 		fields := strings.Fields(line)
-		if len(fields) != 1 || fields[0] != current.name && !strings.HasPrefix(fields[0], current.name+"/") {
+		if len(fields) != 1 || fields[0] != packagePrefix && !strings.HasPrefix(fields[0], packagePrefix+"/") {
 			continue
 		}
 		if !seen[current] {
@@ -64,4 +60,28 @@ func parseGoVendorModules(content []byte) []goVendorModule {
 		}
 	}
 	return modules
+}
+
+// parseGoVendorModuleHeader parses a modules.txt "# module version" header,
+// returning the vendored module identity and the import-path prefix used by
+// package lines beneath it. A replace directive vendors the replacement code
+// under the original import path, so the identity is the replacement while the
+// prefix remains the original. Local-path replacements have no module identity.
+func parseGoVendorModuleHeader(header string) (goVendorModule, string) {
+	required, replacement, replaced := strings.Cut(header, "=>")
+	fields := strings.Fields(required)
+	if len(fields) == 0 {
+		return goVendorModule{}, ""
+	}
+	prefix := fields[0]
+	if replaced {
+		fields = strings.Fields(replacement)
+		if len(fields) == 0 || strings.HasPrefix(fields[0], "./") || strings.HasPrefix(fields[0], "../") {
+			return goVendorModule{}, ""
+		}
+	}
+	if len(fields) < 2 || !goModuleVersion.MatchString(fields[1]) {
+		return goVendorModule{}, ""
+	}
+	return goVendorModule{name: fields[0], version: fields[1]}, prefix
 }
