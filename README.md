@@ -176,6 +176,27 @@ Workspace records set `ParentPath` to the configuration that selected them.
 Warnings report malformed workspace configuration or failed lookups without
 discarding manifests that were discovered successfully.
 
+### DiscoverVendors
+
+Discovers package-manager vendor roots and exact package identities stored in
+the repository. The initial implementation recognizes npm `node_modules`
+trees exposed by the supplied reader, Go `vendor/modules.txt`, Python
+`[tool.vendoring]` configuration, and Cargo directory sources selected through
+`.cargo/config.toml` or `.cargo/config`.
+
+```go
+reader := manifests.NewFSReader(os.DirFS("."))
+found, warnings := manifests.DiscoverVendors(reader)
+```
+
+`VendorDiscovery.Roots` classifies each vendor directory by ecosystem and
+records the configuration or inventory that selected it. Each
+`VendoredDependency` has `Kind == Vendor`, an exact package identity and PURL,
+its vendor root, and the evidence file from which the identity was read.
+Results are normalized and deterministic. Invalid configuration, unreadable
+evidence, and incomplete package identities are returned as warnings without
+discarding successful discoveries.
+
 ## Types
 
 ### Dependency
@@ -212,6 +233,31 @@ type ParseResult struct {
 
 `Licenses` contains decoded values as declared by the manifest; it does not normalize them into SPDX expressions. `LicenseFile` is populated when a format explicitly identifies a license file. Both are empty for formats without license metadata.
 
+### Vendor Discovery
+
+```go
+type VendorDiscovery struct {
+    Roots        []VendorRoot
+    Dependencies []VendoredDependency
+}
+
+type VendorRoot struct {
+    Path       string
+    Ecosystem  string
+    ConfigPath string
+}
+
+type VendoredDependency struct {
+    Name         string
+    Version      string
+    Ecosystem    string
+    Kind         Kind
+    PURL         string
+    RootPath     string
+    EvidencePath string
+}
+```
+
 ### Kind
 
 ```go
@@ -219,6 +265,7 @@ const (
     Manifest   Kind = "manifest"   // Declared dependencies with version constraints
     Lockfile   Kind = "lockfile"   // Resolved dependencies with exact versions
     Supplement Kind = "supplement" // Provides extra data (e.g. integrity hashes) for a manifest's dependencies
+    Vendor     Kind = "vendor"     // Exact package identity stored under a vendor root
 )
 ```
 
