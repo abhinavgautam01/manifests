@@ -36,7 +36,7 @@ func (d *vendorDiscovery) discoverCargoVendors() []error {
 	}
 	parsedConfigs := make([]cargoVendorConfig, 0, len(configs))
 	for _, configPath := range configs {
-		if !strings.HasSuffix(configPath, ".toml") && configSet[configPath+".toml"] {
+		if strings.HasSuffix(configPath, ".toml") && configSet[strings.TrimSuffix(configPath, ".toml")] {
 			continue
 		}
 		content, err := d.reader.ReadFile(configPath)

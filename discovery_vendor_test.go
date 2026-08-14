@@ -193,12 +193,6 @@ archspec @ git+https://github.com/archspec/archspec.git@4a8cb2a1c7d8e264c0a391f4
 
 func TestDiscoverVendorsCargo(t *testing.T) {
 	reader := mapFSReader(map[string]string{
-		"project/.cargo/config": `[source.crates-io]
-replace-with = "legacy-vendor"
-
-[source.legacy-vendor]
-directory = "unused-vendor"
-`,
 		"project/.cargo/config.toml": `[source.crates-io]
 replace-with = "company-mirror"
 
@@ -242,7 +236,7 @@ version = "1.0.0"
 	}
 }
 
-func TestDiscoverVendorsCargoPrefersTomlConfigAtRoot(t *testing.T) {
+func TestDiscoverVendorsCargoPrefersExtensionlessConfigAtRoot(t *testing.T) {
 	reader := mapFSReader(map[string]string{
 		".cargo/config": `[source.crates-io]
 replace-with = "legacy"
@@ -264,12 +258,12 @@ directory = "vendor"
 	if len(warnings) != 0 {
 		t.Fatalf("DiscoverVendors warnings: %v", warnings)
 	}
-	wantRoots := []VendorRoot{{Path: "vendor", Ecosystem: "cargo", ConfigPath: ".cargo/config.toml"}}
+	wantRoots := []VendorRoot{{Path: "legacy-vendor", Ecosystem: "cargo", ConfigPath: ".cargo/config"}}
 	if !slices.Equal(got.Roots, wantRoots) {
 		t.Fatalf("DiscoverVendors roots = %+v, want %+v", got.Roots, wantRoots)
 	}
-	if len(got.Dependencies) != 1 || got.Dependencies[0].Name != "current" {
-		t.Fatalf("DiscoverVendors dependencies = %+v, want only current", got.Dependencies)
+	if len(got.Dependencies) != 1 || got.Dependencies[0].Name != "old" {
+		t.Fatalf("DiscoverVendors dependencies = %+v, want only old", got.Dependencies)
 	}
 }
 
