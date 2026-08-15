@@ -80,6 +80,47 @@ func TestEcosystems(t *testing.T) {
 	}
 }
 
+func TestMavenDeclarationPURLs(t *testing.T) {
+	content := []byte(`<project>
+  <parent>
+    <groupId>org.example</groupId>
+    <artifactId>parent</artifactId>
+    <version>1.0.0</version>
+  </parent>
+  <artifactId>example</artifactId>
+  <build>
+    <plugins>
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>4.0.0</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>`)
+
+	result, err := Parse("pom.xml", content)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	want := map[string]string{
+		"parent/org.example:parent":                                    "pkg:maven/org.example/parent",
+		"build/plugins/org.apache.maven.plugins:maven-compiler-plugin": "pkg:maven/org.apache.maven.plugins/maven-compiler-plugin",
+	}
+	if len(result.Declarations) != len(want) {
+		t.Fatalf("Declarations has %d entries, want %d: %+v", len(result.Declarations), len(want), result.Declarations)
+	}
+	for _, declaration := range result.Declarations {
+		wantPURL, ok := want[declaration.Location]
+		if !ok {
+			t.Errorf("unexpected declaration at %q: %+v", declaration.Location, declaration)
+			continue
+		}
+		if declaration.PURL != wantPURL {
+			t.Errorf("declaration at %q has PURL %q, want %q", declaration.Location, declaration.PURL, wantPURL)
+		}
+	}
+}
+
 func TestParseDeclaredLicenses(t *testing.T) {
 	testCases := []struct {
 		name        string
