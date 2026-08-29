@@ -225,6 +225,10 @@ discarding successful discoveries.
 
 ## Types
 
+This module is pre-v1 and exported result structs may gain additive metadata
+fields in minor releases. Use keyed composite literals when constructing
+`Dependency`, `Declaration`, or `ParseResult` values.
+
 ### Dependency
 
 ```go

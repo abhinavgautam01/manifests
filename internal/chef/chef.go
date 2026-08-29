@@ -220,7 +220,7 @@ func (call rubyCall) hasExactPositionalCount(count int) bool {
 // Unterminated strings are abandoned at the physical newline so one malformed
 // dynamic declaration cannot hide later valid declarations.
 func rubyStatements(content []byte) []string {
-	statements := make([]string, 0, strings.Count(string(content), "\n")+1)
+	statements := make([]string, 0, core.EstimateDeps(len(content)))
 	var statement strings.Builder
 	var quote byte
 	escaped := false

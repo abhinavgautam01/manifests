@@ -29,10 +29,14 @@ type (
 
 // Dependency represents a parsed dependency. Its Integrity field is an opaque
 // verification value whose digest encoding depends on the source format.
+// Before v1, callers constructing values should use keyed fields so additive
+// metadata fields remain source-compatible.
 type Dependency = core.Dependency
 
 // Declaration represents a dependency-like reference at a stable logical
 // location in a manifest. Location is ecosystem-specific and opaque.
+// Before v1, callers constructing values should use keyed fields so additive
+// metadata fields remain source-compatible.
 type Declaration = core.Declaration
 
 // Source preserves a literal manifest source declaration. It does not report
@@ -59,6 +63,8 @@ const (
 )
 
 // ParseResult contains the parsed dependencies from a manifest or lockfile.
+// Before v1, callers constructing values should use keyed fields so additive
+// metadata fields remain source-compatible.
 type ParseResult struct {
 	Ecosystem string
 	Kind      Kind
