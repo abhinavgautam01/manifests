@@ -1,0 +1,12 @@
+source "https://supermarket.chef.io"
+source('https://supermarket.example.test') # private Supermarket
+
+metadata
+cookbook "ntp", "<= 1.0.0"
+cookbook('mysql')
+cookbook "company_base", git: "https://github.com/example/company_base.git", tag: "v2.0.0"
+cookbook 'local_users', path: '../local_users'
+cookbook 'github_cookbook',
+  github: 'example/github_cookbook',
+  branch: 'main',
+  rel: 'cookbooks/github_cookbook'

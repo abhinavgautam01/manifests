@@ -29,6 +29,9 @@ func TestParseAllEcosystems(t *testing.T) {
 		{"pypi requirements.txt", "testdata/pypi/requirements.txt", "pypi", Manifest},
 		{"maven pom.xml", "testdata/maven/pom.xml", "maven", Manifest},
 		{"nuget central packages", "testdata/nuget/Directory.Packages.props", "nuget", Manifest},
+		{"chef metadata.rb", "testdata/chef/metadata.rb", "chef", Manifest},
+		{"chef metadata.json", "testdata/chef/metadata.json", "chef", Manifest},
+		{"chef Berksfile", "testdata/chef/Berksfile", "chef", Manifest},
 		{"composer composer.json", "testdata/composer/composer.json", "composer", Manifest},
 		{"composer composer.lock", "testdata/composer/composer.lock", "composer", Lockfile},
 	}
@@ -74,10 +77,61 @@ func TestEcosystems(t *testing.T) {
 		seen[e] = true
 	}
 
-	for _, want := range []string{"npm", "gem", "cargo", "golang", "pypi", "maven"} {
+	for _, want := range []string{"npm", "gem", "cargo", "golang", "pypi", "maven", "chef"} {
 		if !slices.Contains(got, want) {
 			t.Errorf("Ecosystems() missing %q", want)
 		}
+	}
+}
+
+func TestChefManifestRegistrationAndCandidatePURLs(t *testing.T) {
+	t.Parallel()
+
+	for _, filename := range []string{"metadata.rb", "metadata.json", "Berksfile"} {
+		ecosystem, kind, ok := Identify("cookbooks/example/" + filename)
+		if !ok || ecosystem != "chef" || kind != Manifest {
+			t.Errorf("Identify(%q) = %q, %q, %v; want chef manifest", filename, ecosystem, kind, ok)
+		}
+	}
+
+	content, err := os.ReadFile("testdata/chef/Berksfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := Parse("Berksfile", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Sources) != 2 || result.Sources[0].Value != "https://supermarket.chef.io" ||
+		result.Sources[1].Value != "https://supermarket.example.test" {
+		t.Errorf("sources = %+v, want ordered Berksfile sources", result.Sources)
+	}
+	for _, dependency := range result.Dependencies {
+		if dependency.PURL != "" {
+			t.Errorf("Chef candidate PURL = %q, want empty", dependency.PURL)
+		}
+	}
+	for _, declaration := range result.Declarations {
+		if declaration.PURL != "" {
+			t.Errorf("Chef candidate declaration PURL = %q, want empty", declaration.PURL)
+		}
+	}
+}
+
+func TestBerksfileMetadataDirectiveDoesNotReadFSRoot(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	metadata := []byte("name 'must_not_be_loaded'\ndepends 'must_not_be_loaded'\n")
+	if err := os.WriteFile(filepath.Join(root, "metadata.rb"), metadata, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Parse("Berksfile", []byte("metadata\n"), Options{FSRoot: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Name != "" || len(result.Dependencies) != 0 || len(result.Declarations) != 0 {
+		t.Errorf("bare metadata loaded adjacent file: %+v", result)
 	}
 }
 

@@ -22,6 +22,25 @@ const (
 	Optional    Scope = "optional"
 )
 
+// SourceKind identifies the kind of location named by a source declaration.
+// The value describes syntax in the manifest, not a resolved package source.
+type SourceKind string
+
+const (
+	SourceRegistry SourceKind = "registry"
+	SourceGit      SourceKind = "git"
+	SourcePath     SourceKind = "path"
+	SourceGitHub   SourceKind = "github"
+)
+
+// Source preserves an explicit source declaration without claiming that a
+// dependency was resolved from it. Value is the literal URL, path, or
+// ecosystem-specific coordinate.
+type Source struct {
+	Kind  SourceKind
+	Value string
+}
+
 // Dependency represents a parsed dependency from a manifest or lockfile.
 type Dependency struct {
 	Name    string
@@ -33,6 +52,10 @@ type Dependency struct {
 	Direct      bool
 	PURL        string
 	RegistryURL string
+	// Source is set only when this dependency has an explicit source override.
+	// It is intentionally separate from RegistryURL because paths and Git
+	// repositories are not package registries.
+	Source Source
 }
 
 // Declaration is a dependency-like reference at a stable logical location
@@ -50,6 +73,7 @@ type Declaration struct {
 	// it when a file can contain references from more than one ecosystem.
 	PURL     string
 	Location string
+	Source   Source
 }
 
 // Result is the output of a single parser.
@@ -67,6 +91,10 @@ type Result struct {
 	LicenseFile  string
 	Dependencies []Dependency
 	Declarations []Declaration
+	// Sources preserves manifest-level source declarations in source order.
+	// These entries are configuration, not evidence that any dependency was
+	// resolved from a particular source.
+	Sources []Source
 }
 
 // Parser is the interface implemented by all manifest parsers.
