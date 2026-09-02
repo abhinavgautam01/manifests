@@ -37,8 +37,12 @@ const (
 // dependency was resolved from it. Value is the literal URL, path, or
 // ecosystem-specific coordinate.
 type Source struct {
-	Kind  SourceKind
-	Value string
+	Kind   SourceKind
+	Value  string
+	Branch string
+	Tag    string
+	Ref    string
+	Rel    string
 }
 
 // Dependency represents a parsed dependency from a manifest or lockfile.

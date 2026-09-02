@@ -283,8 +283,12 @@ entries when the source format records that distinction, such as `go.mod`.
 
 ```go
 type Source struct {
-    Kind  SourceKind // registry, git, path, or github
-    Value string     // Literal URL, path, or ecosystem coordinate
+    Kind   SourceKind // registry, git, path, or github
+    Value  string     // Literal URL, path, or ecosystem coordinate
+    Branch string     // Literal branch selector
+    Tag    string     // Literal tag selector
+    Ref    string     // Literal revision selector
+    Rel    string     // Literal repository-relative cookbook path
 }
 ```
 
@@ -294,7 +298,8 @@ used that location. Manifest-level source configuration is preserved in
 stored on both its `Dependency` and `Declaration`; dependencies with no
 override have an empty `Source`. `RegistryURL` remains reserved for resolved or
 otherwise attributable package registries and is not used for Git repositories
-or local paths.
+or local paths. Chef Git and GitHub sources also retain literal `branch`, `tag`,
+`ref`, and `rel` options without resolving them.
 
 Parsers that do not preserve source locations leave `Declarations` empty.
 Declarations are available for `package.json`, Cargo manifests, `go.mod`, Python

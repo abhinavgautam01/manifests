@@ -138,16 +138,19 @@ func TestBerksfileParser(t *testing.T) {
 	dependencies := indexChefDependencies(result.Dependencies)
 	assertChefSource(t, dependencies["company_base"].Source, core.SourceGit,
 		"https://github.com/example/company_base.git")
+	assertChefSourceOptions(t, dependencies["company_base"].Source, "", "v2.0.0", "", "")
 	assertChefSource(t, dependencies["local_users"].Source, core.SourcePath,
 		"../local_users")
 	assertChefSource(t, dependencies["github_cookbook"].Source, core.SourceGitHub,
 		"example/github_cookbook")
+	assertChefSourceOptions(t, dependencies["github_cookbook"].Source,
+		"main", "", "", "cookbooks/github_cookbook")
 	if dependencies["ntp"].Source.Kind != "" || dependencies["mysql"].Source.Kind != "" {
 		t.Errorf("registry dependencies claim explicit sources: %+v", dependencies)
 	}
 	for _, declaration := range result.Declarations {
 		dependency := dependencies[declaration.Name]
-		if declaration.Source.Kind != dependency.Source.Kind || declaration.Source.Value != dependency.Source.Value {
+		if declaration.Source != dependency.Source {
 			t.Errorf("declaration source = %+v, dependency source = %+v", declaration.Source, dependency.Source)
 		}
 	}
@@ -172,6 +175,30 @@ cookbook 'legacy', :git => 'https://example.test/legacy.git', :ref => 'abc123'
 	}
 	assertChefSource(t, result.Dependencies[0].Source, core.SourceGit,
 		"https://example.test/legacy.git")
+	assertChefSourceOptions(t, result.Dependencies[0].Source, "", "", "abc123", "")
+}
+
+func TestBerksfileParserPreservesLiteralSourceOptions(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(`
+cookbook "from_branch", git: "https://example.test/shared.git", branch: "main"
+cookbook "from_tag", git: "https://example.test/shared.git", tag: "v1.2.3"
+cookbook "from_ref", git: "https://example.test/shared.git", ref: "abc123"
+cookbook "from_rel", git: "https://example.test/shared.git", rel: "cookbooks/app"
+`)
+	result, err := (&berksfileParser{}).Parse("Berksfile", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dependencies := indexChefDependencies(result.Dependencies)
+	assertChefSourceOptions(t, dependencies["from_branch"].Source, "main", "", "", "")
+	assertChefSourceOptions(t, dependencies["from_tag"].Source, "", "v1.2.3", "", "")
+	assertChefSourceOptions(t, dependencies["from_ref"].Source, "", "", "abc123", "")
+	assertChefSourceOptions(t, dependencies["from_rel"].Source, "", "", "", "cookbooks/app")
+	if dependencies["from_branch"].Source == dependencies["from_tag"].Source {
+		t.Error("different source selectors produced identical Source values")
+	}
 }
 
 func TestBerksfileParserSkipsDynamicCallsAndMetadata(t *testing.T) {
@@ -216,6 +243,70 @@ depends 'single\q', '>= 2.0'
 		"escaped#{name}": "line\nconstraint",
 		"single\\q":      ">= 2.0",
 	})
+}
+
+func TestRubyParsersSkipNestedDeclarations(t *testing.T) {
+	t.Parallel()
+
+	metadata := []byte(`
+if enabled
+  name "conditional"
+  depends "conditional"
+end
+unless disabled
+  depends "unless"
+end
+items.each do |item|
+  depends "iterator"
+end
+items.fetch("#{dynamic}").each do |item|
+  depends "dynamic_iterator"
+end
+3.times {
+  depends "brace_loop"
+}
+def dependencies
+  depends "method"
+end
+class CookbookMetadata
+  depends "class"
+end
+module CookbookHelpers
+  depends "module"
+end
+wrapper(
+  depends "nested_call"
+)
+
+name "top_level"
+depends "top_level"
+`)
+	metadataResult, err := (&metadataRubyParser{}).Parse("metadata.rb", metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadataResult.Name != "top_level" {
+		t.Errorf("name = %q, want top_level", metadataResult.Name)
+	}
+	assertChefDependencies(t, metadataResult, map[string]string{"top_level": ""})
+
+	berksfile := []byte(`
+if enabled
+  source "https://nested.example.test"
+  cookbook "nested", path: "../nested"
+end
+source "https://top-level.example.test"
+cookbook "top_level", path: "../top_level"
+`)
+	berksfileResult, err := (&berksfileParser{}).Parse("Berksfile", berksfile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(berksfileResult.Sources) != 1 ||
+		berksfileResult.Sources[0].Value != "https://top-level.example.test" {
+		t.Errorf("sources = %+v, want only top-level source", berksfileResult.Sources)
+	}
+	assertChefDependencies(t, berksfileResult, map[string]string{"top_level": ""})
 }
 
 func readChefFixture(t *testing.T, path string) []byte {
@@ -287,5 +378,13 @@ func assertChefSource(
 	t.Helper()
 	if source.Kind != kind || source.Value != value {
 		t.Errorf("source = %+v, want kind %q value %q", source, kind, value)
+	}
+}
+
+func assertChefSourceOptions(t *testing.T, source core.Source, branch, tag, ref, rel string) {
+	t.Helper()
+	if source.Branch != branch || source.Tag != tag || source.Ref != ref || source.Rel != rel {
+		t.Errorf("source options = %+v, want branch %q tag %q ref %q rel %q",
+			source, branch, tag, ref, rel)
 	}
 }

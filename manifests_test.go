@@ -135,6 +135,20 @@ func TestBerksfileMetadataDirectiveDoesNotReadFSRoot(t *testing.T) {
 	}
 }
 
+func TestChefParseRecoversAfterUnmatchedParenthesis(t *testing.T) {
+	t.Parallel()
+
+	content := []byte("cookbook(\"broken\"\ncookbook \"valid\", \"~> 1.0\"\n")
+	result, err := Parse("Berksfile", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Dependencies) != 1 || result.Dependencies[0].Name != "valid" ||
+		result.Dependencies[0].Version != "~> 1.0" {
+		t.Errorf("dependencies = %+v, want recovered valid dependency", result.Dependencies)
+	}
+}
+
 func TestMavenDeclarationPURLs(t *testing.T) {
 	content := []byte(`<project>
   <parent>

@@ -2,6 +2,7 @@
 package chef
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/url"
 	"sort"
@@ -172,10 +173,28 @@ func cookbookSource(keywords map[string]string) (core.Source, bool) {
 		source.Kind = key.kind
 		source.Value = value
 	}
-	// Other literal options such as branch, tag, ref, and rel are accepted so
-	// the source location is retained from common multiline Berksfile
-	// declarations. They do not alter the raw coordinate represented by Source.
+	if !supportedCookbookSourceKeywords(keywords) {
+		return core.Source{}, false
+	}
+	source.Branch = keywords["branch"]
+	source.Tag = keywords["tag"]
+	source.Ref = keywords["ref"]
+	source.Rel = keywords["rel"]
+	if selected == "" && (source.Branch != "" || source.Tag != "" || source.Ref != "" || source.Rel != "") {
+		return core.Source{}, false
+	}
 	return source, true
+}
+
+func supportedCookbookSourceKeywords(keywords map[string]string) bool {
+	for key := range keywords {
+		switch key {
+		case "git", "path", "github", "branch", "tag", "ref", "rel":
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func appendChefDependency(
@@ -220,49 +239,117 @@ func (call rubyCall) hasExactPositionalCount(count int) bool {
 // Unterminated strings are abandoned at the physical newline so one malformed
 // dynamic declaration cannot hide later valid declarations.
 func rubyStatements(content []byte) []string {
-	statements := make([]string, 0, core.EstimateDeps(len(content)))
-	var statement strings.Builder
+	scanner := rubyStatementScanner{
+		statements: make([]string, 0, core.EstimateDeps(len(content))),
+	}
+	for position, character := range content {
+		if character == '\n' {
+			scanner.finishLine(content[position+1:])
+			continue
+		}
+		scanner.consume(character)
+	}
+	scanner.flush()
+	return scanner.statements
+}
+
+type rubyStatementScanner struct {
+	statements  []string
+	statement   strings.Builder
+	quote       byte
+	escaped     bool
+	comment     bool
+	parentheses int
+	blockDepth  int
+}
+
+func (scanner *rubyStatementScanner) consume(character byte) {
+	if scanner.comment {
+		return
+	}
+	if scanner.quote != 0 {
+		scanner.consumeQuoted(character)
+		return
+	}
+	scanner.consumeUnquoted(character)
+}
+
+func (scanner *rubyStatementScanner) consumeQuoted(character byte) {
+	scanner.statement.WriteByte(character)
+	switch {
+	case scanner.escaped:
+		scanner.escaped = false
+	case character == '\\':
+		scanner.escaped = true
+	case character == scanner.quote:
+		scanner.quote = 0
+	}
+}
+
+func (scanner *rubyStatementScanner) consumeUnquoted(character byte) {
+	switch character {
+	case '\'', '"':
+		scanner.quote = character
+		scanner.statement.WriteByte(character)
+	case '#':
+		scanner.comment = true
+	case '(':
+		scanner.parentheses++
+		scanner.statement.WriteByte(character)
+	case ')':
+		scanner.parentheses--
+		scanner.statement.WriteByte(character)
+	default:
+		scanner.statement.WriteByte(character)
+	}
+}
+
+func (scanner *rubyStatementScanner) finishLine(remaining []byte) {
+	if scanner.quote != 0 {
+		scanner.resetStatement()
+		return
+	}
+	scanner.comment = false
+	if scanner.shouldContinue(remaining) {
+		scanner.statement.WriteByte(' ')
+		return
+	}
+	scanner.flush()
+}
+
+func (scanner *rubyStatementScanner) shouldContinue(remaining []byte) bool {
+	last := lastNonSpaceByte(scanner.statement.String())
+	if scanner.parentheses <= 0 {
+		return last == ','
+	}
+	next := nextRubyCode(remaining)
+	if startsRubyStatementBoundary(next) && !rubyParenthesesClose(remaining, scanner.parentheses) {
+		return false
+	}
+	return last == ',' || last == '(' || len(next) > 0 && next[0] == ')'
+}
+
+func rubyParenthesesClose(content []byte, depth int) bool {
 	var quote byte
 	escaped := false
 	comment := false
-	parentheses := 0
-
-	flush := func() {
-		trimmed := strings.TrimSpace(statement.String())
-		if trimmed != "" {
-			statements = append(statements, trimmed)
-		}
-		statement.Reset()
-		quote = 0
-		escaped = false
-		comment = false
-		parentheses = 0
-	}
-
 	for _, character := range content {
 		if character == '\n' {
-			if quote != 0 {
-				flush()
-				continue
-			}
+			quote = 0
+			escaped = false
 			comment = false
-			if parentheses > 0 || lastNonSpaceByte(statement.String()) == ',' {
-				statement.WriteByte(' ')
-			} else {
-				flush()
-			}
 			continue
 		}
 		if comment {
 			continue
 		}
 		if quote != 0 {
-			statement.WriteByte(character)
-			if escaped {
+			switch {
+			case escaped:
 				escaped = false
-			} else if character == '\\' {
+			case character == '\\':
 				escaped = true
-			} else if character == quote {
+			case character == quote:
 				quote = 0
 			}
 			continue
@@ -270,21 +357,159 @@ func rubyStatements(content []byte) []string {
 		switch character {
 		case '\'', '"':
 			quote = character
-			statement.WriteByte(character)
 		case '#':
 			comment = true
 		case '(':
-			parentheses++
-			statement.WriteByte(character)
+			depth++
 		case ')':
-			parentheses--
-			statement.WriteByte(character)
-		default:
-			statement.WriteByte(character)
+			depth--
+			if depth <= 0 {
+				return true
+			}
 		}
 	}
-	flush()
-	return statements
+	return false
+}
+
+func (scanner *rubyStatementScanner) flush() {
+	statement := strings.TrimSpace(scanner.statement.String())
+	scanner.resetStatement()
+	if statement == "" {
+		return
+	}
+	closes, opens, boundary := rubyBlockTransition(statement)
+	if closes && scanner.blockDepth > 0 {
+		scanner.blockDepth--
+	}
+	if scanner.blockDepth == 0 && !boundary {
+		scanner.statements = append(scanner.statements, statement)
+	}
+	if opens {
+		scanner.blockDepth++
+	}
+}
+
+func (scanner *rubyStatementScanner) resetStatement() {
+	scanner.statement.Reset()
+	scanner.quote = 0
+	scanner.escaped = false
+	scanner.comment = false
+	scanner.parentheses = 0
+}
+
+func nextRubyCode(content []byte) []byte {
+	for len(content) > 0 {
+		for len(content) > 0 && isRubySpace(content[0]) {
+			content = content[1:]
+		}
+		if len(content) == 0 || content[0] != '#' {
+			return content
+		}
+		newline := bytes.IndexByte(content, '\n')
+		if newline < 0 {
+			return nil
+		}
+		content = content[newline+1:]
+	}
+	return nil
+}
+
+func startsRubyStatementBoundary(content []byte) bool {
+	position := 0
+	for position < len(content) && isRubyIdentifierByte(content[position]) {
+		position++
+	}
+	if position == 0 {
+		return len(content) > 0 && content[0] == '}'
+	}
+	switch string(content[:position]) {
+	case "name", "version", "license", "depends", "source", "cookbook", "metadata",
+		"if", "unless", "case", "while", "until", "for", "begin", "class", "module", "def", "end":
+		return position == len(content) || isRubySpace(content[position]) || content[position] == '('
+	default:
+		return false
+	}
+}
+
+func rubyBlockTransition(statement string) (bool, bool, bool) {
+	first := leadingRubyIdentifier(statement)
+	if first == "end" || first == "}" {
+		return true, false, true
+	}
+	switch first {
+	case "if", "unless", "case", "while", "until", "for", "begin", "class", "module", "def":
+		return false, true, true
+	case "else", "elsif", "when", "rescue", "ensure":
+		return false, false, true
+	}
+	if lastNonSpaceByte(statement) == '{' || hasRubyDoBlock(statement) {
+		return false, true, true
+	}
+	return false, false, false
+}
+
+func leadingRubyIdentifier(statement string) string {
+	position := 0
+	skipRubySpace(statement, &position)
+	if position < len(statement) && statement[position] == '}' {
+		return "}"
+	}
+	start := position
+	for position < len(statement) && isRubyIdentifierByte(statement[position]) {
+		position++
+	}
+	return statement[start:position]
+}
+
+func hasRubyDoBlock(statement string) bool {
+	for position := 0; position < len(statement); {
+		if statement[position] == '\'' || statement[position] == '"' {
+			if !skipRubyQuotedText(statement, &position) {
+				return false
+			}
+			continue
+		}
+		if !isRubyIdentifierByte(statement[position]) {
+			position++
+			continue
+		}
+		start := position
+		for position < len(statement) && isRubyIdentifierByte(statement[position]) {
+			position++
+		}
+		if statement[start:position] == "do" && isRubyBlockParameterSuffix(statement[position:]) {
+			return true
+		}
+	}
+	return false
+}
+
+func skipRubyQuotedText(statement string, position *int) bool {
+	quote := statement[*position]
+	*position++
+	for *position < len(statement) {
+		character := statement[*position]
+		*position++
+		if character == quote {
+			return true
+		}
+		if character == '\\' && *position < len(statement) {
+			*position++
+		}
+	}
+	return false
+}
+
+func isRubyBlockParameterSuffix(suffix string) bool {
+	suffix = strings.TrimSpace(suffix)
+	if suffix == "" {
+		return true
+	}
+	if suffix[0] != '|' {
+		return false
+	}
+	closing := strings.IndexByte(suffix[1:], '|')
+	return closing >= 0 && strings.TrimSpace(suffix[closing+2:]) == ""
 }
 
 func lastNonSpaceByte(value string) byte {
@@ -300,6 +525,14 @@ func lastNonSpaceByte(value string) byte {
 // positional arguments and literal string keyword arguments. Any remaining
 // Ruby expression makes the whole declaration ineligible.
 func parseRubyCall(statement string) (rubyCall, bool) {
+	call, position, parenthesized, ok := parseRubyCallHeader(statement)
+	if !ok {
+		return rubyCall{}, false
+	}
+	return parseRubyCallArguments(statement, position, parenthesized, call)
+}
+
+func parseRubyCallHeader(statement string) (rubyCall, int, bool, bool) {
 	position := 0
 	skipRubySpace(statement, &position)
 	start := position
@@ -307,18 +540,26 @@ func parseRubyCall(statement string) (rubyCall, bool) {
 		position++
 	}
 	if position == start {
-		return rubyCall{}, false
+		return rubyCall{}, 0, false, false
 	}
 	call := rubyCall{name: statement[start:position]}
 	if position < len(statement) && !isRubySpace(statement[position]) && statement[position] != '(' {
-		return rubyCall{}, false
+		return rubyCall{}, 0, false, false
 	}
 	skipRubySpace(statement, &position)
 	parenthesized := position < len(statement) && statement[position] == '('
 	if parenthesized {
 		position++
 	}
+	return call, position, parenthesized, true
+}
 
+func parseRubyCallArguments(
+	statement string,
+	position int,
+	parenthesized bool,
+	call rubyCall,
+) (rubyCall, bool) {
 	for {
 		skipRubySpace(statement, &position)
 		if parenthesized && position < len(statement) && statement[position] == ')' {
@@ -329,43 +570,60 @@ func parseRubyCall(statement string) (rubyCall, bool) {
 		if position == len(statement) {
 			return call, !parenthesized
 		}
-
-		if statement[position] == '\'' || statement[position] == '"' {
-			value, ok := parseRubyString(statement, &position)
-			if !ok {
-				return rubyCall{}, false
-			}
-			call.positional = append(call.positional, value)
-		} else {
-			key, value, ok := parseRubyKeyword(statement, &position)
-			if !ok {
-				return rubyCall{}, false
-			}
-			if call.keywords == nil {
-				call.keywords = make(map[string]string)
-			}
-			if _, duplicate := call.keywords[key]; duplicate {
-				return rubyCall{}, false
-			}
-			call.keywords[key] = value
-		}
-
-		skipRubySpace(statement, &position)
-		if position == len(statement) {
-			return call, !parenthesized
-		}
-		if parenthesized && statement[position] == ')' {
-			continue
-		}
-		if statement[position] != ',' {
+		if !appendRubyCallArgument(statement, &position, &call) {
 			return rubyCall{}, false
 		}
-		position++
-		skipRubySpace(statement, &position)
-		if position == len(statement) {
-			return call, !parenthesized
+		done, valid := consumeRubyArgumentEnd(statement, &position, parenthesized)
+		if !valid {
+			return rubyCall{}, false
+		}
+		if done {
+			return call, true
 		}
 	}
+}
+
+func appendRubyCallArgument(statement string, position *int, call *rubyCall) bool {
+	if statement[*position] == '\'' || statement[*position] == '"' {
+		value, ok := parseRubyString(statement, position)
+		if ok {
+			call.positional = append(call.positional, value)
+		}
+		return ok
+	}
+	key, value, ok := parseRubyKeyword(statement, position)
+	if !ok {
+		return false
+	}
+	if call.keywords == nil {
+		call.keywords = make(map[string]string)
+	}
+	if _, duplicate := call.keywords[key]; duplicate {
+		return false
+	}
+	call.keywords[key] = value
+	return true
+}
+
+func consumeRubyArgumentEnd(statement string, position *int, parenthesized bool) (bool, bool) {
+	skipRubySpace(statement, position)
+	if *position == len(statement) {
+		return true, !parenthesized
+	}
+	if parenthesized && statement[*position] == ')' {
+		*position++
+		skipRubySpace(statement, position)
+		return true, *position == len(statement)
+	}
+	if statement[*position] != ',' {
+		return false, false
+	}
+	*position++
+	skipRubySpace(statement, position)
+	if *position == len(statement) {
+		return true, !parenthesized
+	}
+	return false, true
 }
 
 func parseRubyKeyword(statement string, position *int) (string, string, bool) {
