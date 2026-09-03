@@ -149,6 +149,50 @@ func TestChefParseRecoversAfterUnmatchedParenthesis(t *testing.T) {
 	}
 }
 
+func TestChefParseTracksRubyBlockScope(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{
+			name: "brace block parameters",
+			content: `items.each { |item|
+  cookbook "nested", path: "../nested"
+}
+cookbook "top_level", path: "../top_level"
+`,
+		},
+		{
+			name: "assigned conditional expression",
+			content: `choice = if enabled
+  cookbook "nested", path: "../nested"
+end
+cookbook "top_level", path: "../top_level"
+`,
+		},
+		{
+			name: "balanced one-line conditional",
+			content: `if enabled; cookbook "same_line"; end
+cookbook "top_level", path: "../top_level"
+`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			result, err := Parse("Berksfile", []byte(test.content))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Dependencies) != 1 || result.Dependencies[0].Name != "top_level" {
+				t.Errorf("dependencies = %+v, want only top_level", result.Dependencies)
+			}
+		})
+	}
+}
+
 func TestMavenDeclarationPURLs(t *testing.T) {
 	content := []byte(`<project>
   <parent>

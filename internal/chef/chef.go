@@ -377,15 +377,11 @@ func (scanner *rubyStatementScanner) flush() {
 	if statement == "" {
 		return
 	}
-	closes, opens, boundary := rubyBlockTransition(statement)
-	if closes && scanner.blockDepth > 0 {
-		scanner.blockDepth--
-	}
-	if scanner.blockDepth == 0 && !boundary {
+	initialDepth := scanner.blockDepth
+	newDepth, boundary := applyRubyScopeTransitions(statement, scanner.blockDepth)
+	scanner.blockDepth = newDepth
+	if initialDepth == 0 && !boundary {
 		scanner.statements = append(scanner.statements, statement)
-	}
-	if opens {
-		scanner.blockDepth++
 	}
 }
 
@@ -431,57 +427,100 @@ func startsRubyStatementBoundary(content []byte) bool {
 	}
 }
 
-func rubyBlockTransition(statement string) (bool, bool, bool) {
-	first := leadingRubyIdentifier(statement)
-	if first == "end" || first == "}" {
-		return true, false, true
-	}
-	switch first {
-	case "if", "unless", "case", "while", "until", "for", "begin", "class", "module", "def":
-		return false, true, true
-	case "else", "elsif", "when", "rescue", "ensure":
-		return false, false, true
-	}
-	if lastNonSpaceByte(statement) == '{' || hasRubyDoBlock(statement) {
-		return false, true, true
-	}
-	return false, false, false
-}
-
-func leadingRubyIdentifier(statement string) string {
+func applyRubyScopeTransitions(statement string, depth int) (int, bool) {
 	position := 0
-	skipRubySpace(statement, &position)
-	if position < len(statement) && statement[position] == '}' {
-		return "}"
-	}
-	start := position
-	for position < len(statement) && isRubyIdentifierByte(statement[position]) {
+	segmentStart := true
+	afterAssignment := false
+	boundary := false
+	for position < len(statement) {
+		character := statement[position]
+		if isRubySpace(character) {
+			position++
+			continue
+		}
+		if character == '\'' || character == '"' {
+			skipRubyQuotedText(statement, &position)
+			segmentStart = false
+			afterAssignment = false
+			continue
+		}
+		if isRubyIdentifierByte(character) {
+			start := position
+			for position < len(statement) && isRubyIdentifierByte(statement[position]) {
+				position++
+			}
+			if !rubyKeywordLabel(statement, position) {
+				depth, boundary = applyRubyKeywordScope(
+					statement[start:position], depth, segmentStart, afterAssignment, boundary,
+				)
+			}
+			segmentStart = false
+			afterAssignment = false
+			continue
+		}
+		switch character {
+		case '{':
+			depth++
+			boundary = true
+		case '}':
+			depth = decrementRubyScope(depth)
+			boundary = true
+		case ';':
+			segmentStart = true
+			afterAssignment = false
+		case '=':
+			afterAssignment = rubyAssignmentOperator(statement, position)
+		}
 		position++
 	}
-	return statement[start:position]
+	return depth, boundary
 }
 
-func hasRubyDoBlock(statement string) bool {
-	for position := 0; position < len(statement); {
-		if statement[position] == '\'' || statement[position] == '"' {
-			if !skipRubyQuotedText(statement, &position) {
-				return false
-			}
-			continue
+func applyRubyKeywordScope(
+	keyword string,
+	depth int,
+	segmentStart bool,
+	afterAssignment bool,
+	boundary bool,
+) (int, bool) {
+	switch keyword {
+	case "end":
+		return decrementRubyScope(depth), true
+	case "do":
+		return depth + 1, true
+	case "if", "unless", "case", "while", "until", "for", "begin", "class", "module", "def":
+		if segmentStart || afterAssignment {
+			return depth + 1, true
 		}
-		if !isRubyIdentifierByte(statement[position]) {
-			position++
-			continue
-		}
-		start := position
-		for position < len(statement) && isRubyIdentifierByte(statement[position]) {
-			position++
-		}
-		if statement[start:position] == "do" && isRubyBlockParameterSuffix(statement[position:]) {
-			return true
-		}
+	case "else", "elsif", "when", "rescue", "ensure":
+		return depth, true
 	}
-	return false
+	return depth, boundary
+}
+
+func decrementRubyScope(depth int) int {
+	if depth > 0 {
+		return depth - 1
+	}
+	return 0
+}
+
+func rubyKeywordLabel(statement string, position int) bool {
+	skipRubySpace(statement, &position)
+	return position < len(statement) && statement[position] == ':'
+}
+
+func rubyAssignmentOperator(statement string, position int) bool {
+	if position+1 < len(statement) && (statement[position+1] == '=' || statement[position+1] == '>') {
+		return false
+	}
+	for position--; position >= 0; position-- {
+		if isRubySpace(statement[position]) {
+			continue
+		}
+		return !strings.ContainsRune("=!<>", rune(statement[position]))
+	}
+	return true
 }
 
 func skipRubyQuotedText(statement string, position *int) bool {
@@ -498,18 +537,6 @@ func skipRubyQuotedText(statement string, position *int) bool {
 		}
 	}
 	return false
-}
-
-func isRubyBlockParameterSuffix(suffix string) bool {
-	suffix = strings.TrimSpace(suffix)
-	if suffix == "" {
-		return true
-	}
-	if suffix[0] != '|' {
-		return false
-	}
-	closing := strings.IndexByte(suffix[1:], '|')
-	return closing >= 0 && strings.TrimSpace(suffix[closing+2:]) == ""
 }
 
 func lastNonSpaceByte(value string) byte {
