@@ -21,6 +21,7 @@ var benchmarkFixtures = map[string][]string{
 		"testdata/npm/deno.lock",
 		"testdata/npm/bun.lock",
 		"testdata/vcpkg/vcpkg.json",
+		"testdata/chef/metadata.json",
 	},
 	// YAML parsers
 	"yaml": {
@@ -60,6 +61,8 @@ var benchmarkFixtures = map[string][]string{
 		"testdata/maven/build.gradle",
 		"testdata/hackage/example.cabal",
 		"testdata/cpan/cpanfile",
+		"testdata/chef/metadata.rb",
+		"testdata/chef/Berksfile",
 	},
 }
 

@@ -47,6 +47,7 @@ func main() {
 | brew | Brewfile | Brewfile.lock.json |
 | cargo | Cargo.toml | Cargo.lock |
 | carthage | Cartfile, Cartfile.private | Cartfile.resolved |
+| chef | metadata.rb, metadata.json, Berksfile | |
 | clojars | project.clj | |
 | cocoapods | Podfile, *.podspec | Podfile.lock |
 | composer | composer.json | composer.lock |
@@ -224,6 +225,10 @@ discarding successful discoveries.
 
 ## Types
 
+This module is pre-v1 and exported result structs may gain additive metadata
+fields in minor releases. Use keyed composite literals when constructing
+`Dependency`, `Declaration`, or `ParseResult` values.
+
 ### Dependency
 
 ```go
@@ -235,6 +240,7 @@ type Dependency struct {
     Direct      bool   // True if declared directly, false if transitive
     PURL        string // Package URL (pkg:ecosystem/name@version)
     RegistryURL string // Source registry URL (if non-default)
+    Source      Source // Explicit Git, path, or ecosystem source override
 }
 ```
 
@@ -257,6 +263,7 @@ type Declaration struct {
     Direct   bool   // Direct rather than generated or transitive
     PURL     string // Versionless Package URL
     Location string // Opaque parser-defined identity within the manifest
+    Source   Source // Explicit source override as written
 }
 ```
 
@@ -271,6 +278,28 @@ ecosystem.
 
 `Direct` distinguishes explicit requirements from generated or transitive
 entries when the source format records that distinction, such as `go.mod`.
+
+### Source
+
+```go
+type Source struct {
+    Kind   SourceKind // registry, git, path, or github
+    Value  string     // Literal URL, path, or ecosystem coordinate
+    Branch string     // Literal branch selector
+    Tag    string     // Literal tag selector
+    Ref    string     // Literal revision selector
+    Rel    string     // Literal repository-relative cookbook path
+}
+```
+
+`Source` records source syntax without claiming that dependency resolution
+used that location. Manifest-level source configuration is preserved in
+`ParseResult.Sources` in declaration order. An explicit dependency override is
+stored on both its `Dependency` and `Declaration`; dependencies with no
+override have an empty `Source`. `RegistryURL` remains reserved for resolved or
+otherwise attributable package registries and is not used for Git repositories
+or local paths. Chef Git and GitHub sources also retain literal `branch`, `tag`,
+`ref`, and `rel` options without resolving them.
 
 Parsers that do not preserve source locations leave `Declarations` empty.
 Declarations are available for `package.json`, Cargo manifests, `go.mod`, Python
@@ -292,12 +321,16 @@ type ParseResult struct {
     LicenseFile  string       // manifest-relative path to a declared license file
     Dependencies []Dependency
     Declarations []Declaration
+    Sources      []Source      // Ordered manifest-level source declarations
 }
 ```
 
 `Name` and `Version` are populated for manifest formats that declare their own package identity (Cargo.toml `[package]`, package.json `"name"`, go.mod `module`, `.gemspec`, and so on). They are empty for lockfiles and for dependency-only files like Gemfile or requirements.txt.
 
 `Licenses` contains decoded values as declared by the manifest; it does not normalize them into SPDX expressions. `LicenseFile` is populated when a format explicitly identifies a license file. Both are empty for formats without license metadata.
+
+Chef cookbook PURLs remain empty while `chef` is only a candidate Package URL
+type without accepted name and namespace rules.
 
 ### Vendor Discovery
 

@@ -9,6 +9,7 @@ import (
 	_ "github.com/git-pkgs/manifests/internal/brew"
 	_ "github.com/git-pkgs/manifests/internal/cargo"
 	_ "github.com/git-pkgs/manifests/internal/carthage"
+	_ "github.com/git-pkgs/manifests/internal/chef"
 	_ "github.com/git-pkgs/manifests/internal/clojure"
 	_ "github.com/git-pkgs/manifests/internal/cocoapods"
 	_ "github.com/git-pkgs/manifests/internal/composer"

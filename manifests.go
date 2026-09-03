@@ -22,17 +22,26 @@ import (
 
 // Re-export types from internal/core for public API.
 type (
-	Kind  = core.Kind
-	Scope = core.Scope
+	Kind       = core.Kind
+	Scope      = core.Scope
+	SourceKind = core.SourceKind
 )
 
 // Dependency represents a parsed dependency. Its Integrity field is an opaque
 // verification value whose digest encoding depends on the source format.
+// Before v1, callers constructing values should use keyed fields so additive
+// metadata fields remain source-compatible.
 type Dependency = core.Dependency
 
 // Declaration represents a dependency-like reference at a stable logical
 // location in a manifest. Location is ecosystem-specific and opaque.
+// Before v1, callers constructing values should use keyed fields so additive
+// metadata fields remain source-compatible.
 type Declaration = core.Declaration
+
+// Source preserves a literal manifest source declaration. It does not report
+// a resolved package location.
+type Source = core.Source
 
 // Re-export constants.
 const (
@@ -46,9 +55,16 @@ const (
 	Test        Scope = core.Test
 	Build       Scope = core.Build
 	Optional    Scope = core.Optional
+
+	SourceRegistry SourceKind = core.SourceRegistry
+	SourceGit      SourceKind = core.SourceGit
+	SourcePath     SourceKind = core.SourcePath
+	SourceGitHub   SourceKind = core.SourceGitHub
 )
 
 // ParseResult contains the parsed dependencies from a manifest or lockfile.
+// Before v1, callers constructing values should use keyed fields so additive
+// metadata fields remain source-compatible.
 type ParseResult struct {
 	Ecosystem string
 	Kind      Kind
@@ -71,6 +87,9 @@ type ParseResult struct {
 	// their logical locations. Unlike Dependencies, these entries are not
 	// merged, inherited, or otherwise resolved into an effective model.
 	Declarations []Declaration
+	// Sources preserves manifest-level source declarations in source order.
+	// A source declaration does not imply that any dependency resolved there.
+	Sources []Source
 }
 
 // Options configures Parse.
@@ -131,6 +150,7 @@ func Parse(filename string, content []byte, opts ...Options) (*ParseResult, erro
 		LicenseFile:  res.LicenseFile,
 		Dependencies: res.Dependencies,
 		Declarations: res.Declarations,
+		Sources:      res.Sources,
 	}, nil
 }
 
@@ -145,6 +165,12 @@ func declarationPURL(ecosystem string, declaration core.Declaration) string {
 
 // makePURL creates a Package URL for a dependency.
 func makePURL(ecosystem, name, version, registryURL string) string {
+	// Chef is still a candidate PURL type without accepted name or namespace
+	// rules. Keep identities empty instead of inventing a mapping that callers
+	// could mistake for a standardized PURL.
+	if ecosystem == "chef" {
+		return ""
+	}
 	return purl.BuildPURLString(ecosystem, name, version, registryURL)
 }
 
