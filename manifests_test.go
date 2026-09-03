@@ -178,6 +178,14 @@ cookbook "top_level", path: "../top_level"
 cookbook "top_level", path: "../top_level"
 `,
 		},
+		{
+			name: "loop keyword with optional do",
+			content: `for dep in deps do
+  cookbook "nested", path: "../nested"
+end
+cookbook "top_level", path: "../top_level"
+`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

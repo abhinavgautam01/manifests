@@ -431,6 +431,7 @@ func applyRubyScopeTransitions(statement string, depth int) (int, bool) {
 	position := 0
 	segmentStart := true
 	afterAssignment := false
+	loopHead := false
 	boundary := false
 	for position < len(statement) {
 		character := statement[position]
@@ -449,10 +450,19 @@ func applyRubyScopeTransitions(statement string, depth int) (int, bool) {
 			for position < len(statement) && isRubyIdentifierByte(statement[position]) {
 				position++
 			}
+			keyword := statement[start:position]
 			if !rubyKeywordLabel(statement, position) {
-				depth, boundary = applyRubyKeywordScope(
-					statement[start:position], depth, segmentStart, afterAssignment, boundary,
-				)
+				if keyword == "do" && loopHead {
+					loopHead = false
+					boundary = true
+				} else {
+					depth, boundary = applyRubyKeywordScope(
+						keyword, depth, segmentStart, afterAssignment, boundary,
+					)
+					if (segmentStart || afterAssignment) && isRubyLoopKeyword(keyword) {
+						loopHead = true
+					}
+				}
 			}
 			segmentStart = false
 			afterAssignment = false
@@ -468,12 +478,17 @@ func applyRubyScopeTransitions(statement string, depth int) (int, bool) {
 		case ';':
 			segmentStart = true
 			afterAssignment = false
+			loopHead = false
 		case '=':
 			afterAssignment = rubyAssignmentOperator(statement, position)
 		}
 		position++
 	}
 	return depth, boundary
+}
+
+func isRubyLoopKeyword(keyword string) bool {
+	return keyword == "while" || keyword == "until" || keyword == "for"
 }
 
 func applyRubyKeywordScope(
