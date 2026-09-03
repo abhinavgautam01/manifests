@@ -152,11 +152,11 @@ func TestPOMDeclarations(t *testing.T) {
 		version string
 		scope   core.Scope
 	}{
-		"parent/org.example:parent":                                    {"org.example:parent", "1.0.0", core.Build},
-		"dependencies/org.example:runtime":                             {"org.example:runtime", "2.0.0", core.Runtime},
-		"dependencies/org.example:managed":                             {"org.example:managed", "", core.Runtime},
-		"dependencyManagement/dependencies/org.example:managed":        {"org.example:managed", "3.0.0", core.Runtime},
-		"build/plugins/org.apache.maven.plugins:maven-compiler-plugin": {"org.apache.maven.plugins:maven-compiler-plugin", "4.0.0", core.Build},
+		"parent/org.example:parent":                                                                                                                  {"org.example:parent", "1.0.0", core.Build},
+		"dependencies/org.example:runtime":                                                                                                           {"org.example:runtime", "2.0.0", core.Runtime},
+		"dependencies/org.example:managed":                                                                                                           {"org.example:managed", "", core.Runtime},
+		"dependencyManagement/dependencies/org.example:managed":                                                                                      {"org.example:managed", "3.0.0", core.Runtime},
+		"build/plugins/org.apache.maven.plugins:maven-compiler-plugin":                                                                               {"org.apache.maven.plugins:maven-compiler-plugin", "4.0.0", core.Build},
 		"build/plugins/org.apache.maven.plugins:maven-compiler-plugin/dependencies/org.example:plugin-runtime":                                       {"org.example:plugin-runtime", "5.0.0", core.Build},
 		"build/pluginManagement/plugins/org.example:managed-plugin":                                                                                  {"org.example:managed-plugin", "6.0.0", core.Build},
 		"build/pluginManagement/plugins/org.example:managed-plugin/dependencies/org.example:managed-plugin-runtime":                                  {"org.example:managed-plugin-runtime", "6.1.0", core.Build},
