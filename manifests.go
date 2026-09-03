@@ -81,7 +81,10 @@ type ParseResult struct {
 	Licenses []string
 	// LicenseFile is a manifest-relative path to a license file when the
 	// format declares one instead of, or as well as, an expression.
-	LicenseFile  string
+	LicenseFile string
+	// Digest is a file-level verification value whose meaning is defined by
+	// the manifest format. It does not apply to individual dependencies.
+	Digest       string
 	Dependencies []Dependency
 	// Declarations holds source-level references when the parser preserves
 	// their logical locations. Unlike Dependencies, these entries are not
@@ -148,6 +151,7 @@ func Parse(filename string, content []byte, opts ...Options) (*ParseResult, erro
 		Version:      res.Version,
 		Licenses:     res.Licenses,
 		LicenseFile:  res.LicenseFile,
+		Digest:       res.Digest,
 		Dependencies: res.Dependencies,
 		Declarations: res.Declarations,
 		Sources:      res.Sources,
