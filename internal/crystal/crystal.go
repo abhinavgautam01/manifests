@@ -12,23 +12,23 @@ func init() {
 	core.Register("crystal", core.Lockfile, &shardLockParser{}, core.ExactMatch("shard.lock"))
 }
 
-// extractShardName extracts shard name from "  name:" line
-func extractShardName(line string) (string, bool) {
-	if len(line) < 4 || line[0] != ' ' || line[1] != ' ' || line[2] == ' ' {
+// extractShardName extracts shard name from "  name:" lines indented by exactly indent spaces.
+func extractShardName(line string, indent int) (string, bool) {
+	if indent == 0 || len(line) < indent+2 || core.LeadingSpaces(line) != indent {
 		return "", false
 	}
 	if line[len(line)-1] != ':' {
 		return "", false
 	}
-	return line[2 : len(line)-1], true
+	return line[indent : len(line)-1], true
 }
 
-// extractShardValue extracts value from "    key: value" lines
-func extractShardValue(line, prefix string) (string, bool) {
-	if !strings.HasPrefix(line, prefix) {
+// extractShardValue extracts value from "    key: value" lines indented deeper than indent spaces.
+func extractShardValue(line, prefix string, indent int) (string, bool) {
+	if core.LeadingSpaces(line) <= indent {
 		return "", false
 	}
-	return line[len(prefix):], true
+	return strings.CutPrefix(strings.TrimLeft(line, " "), prefix)
 }
 
 // shardYMLParser parses shard.yml files.
@@ -103,6 +103,7 @@ func (p *shardLockParser) Parse(filename string, content []byte) (*core.Result, 
 	deps := make([]core.Dependency, 0, core.EstimateDeps(len(content)))
 
 	inShards := false
+	indent := 0
 	var currentName string
 	var currentVersion string
 
@@ -110,6 +111,7 @@ func (p *shardLockParser) Parse(filename string, content []byte) (*core.Result, 
 		// Detect shards: section
 		if line == "shards:" {
 			inShards = true
+			indent = 0
 			return true
 		}
 
@@ -117,8 +119,13 @@ func (p *shardLockParser) Parse(filename string, content []byte) (*core.Result, 
 			return true
 		}
 
-		// Shard name (2-space indent)
-		if name, ok := extractShardName(line); ok {
+		// The first indented line sets the indent width of shard names
+		if indent == 0 && strings.TrimSpace(line) != "" {
+			indent = core.LeadingSpaces(line)
+		}
+
+		// Shard name
+		if name, ok := extractShardName(line, indent); ok {
 			// Save previous shard if any
 			if currentName != "" {
 				deps = append(deps, core.Dependency{
@@ -133,11 +140,11 @@ func (p *shardLockParser) Parse(filename string, content []byte) (*core.Result, 
 			return true
 		}
 
-		// Version or commit (4-space indent)
+		// Version or commit, nested under the shard name
 		if currentName != "" {
-			if v, ok := extractShardValue(line, "    version: "); ok {
+			if v, ok := extractShardValue(line, "version: ", indent); ok {
 				currentVersion = v
-			} else if v, ok := extractShardValue(line, "    commit: "); ok {
+			} else if v, ok := extractShardValue(line, "commit: ", indent); ok {
 				if currentVersion == "" { // version takes precedence
 					currentVersion = v
 				}

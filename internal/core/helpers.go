@@ -15,6 +15,15 @@ func NextLocation(seen map[string]int, base string) string {
 	return base
 }
 
+// LeadingSpaces returns the number of space characters at the start of line.
+func LeadingSpaces(line string) int {
+	n := 0
+	for n < len(line) && line[n] == ' ' {
+		n++
+	}
+	return n
+}
+
 // ForEachLine iterates over lines in content without allocating a slice.
 func ForEachLine(content string, fn func(line string) bool) {
 	for len(content) > 0 {
