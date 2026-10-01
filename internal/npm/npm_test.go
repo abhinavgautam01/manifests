@@ -1260,3 +1260,34 @@ func TestYarnV4Lock(t *testing.T) {
 		t.Error("workspace package should be excluded")
 	}
 }
+
+// TestPackageLockPathsAgree keeps the line scanner and the JSON decoder from
+// drifting apart on the lockfiles npm itself writes.
+func TestPackageLockPathsAgree(t *testing.T) {
+	paths := []string{
+		"../../testdata/npm/npm-lockfile-version-1/package-lock.json",
+		"../../testdata/npm/npm-lockfile-version-2/package-lock.json",
+		"../../testdata/npm/npm-lockfile-version-3/package-lock.json",
+		"../../testdata/npm/npm-local-file/package-lock.json",
+		"../../testdata/misc/multiple_versions/package-lock.json",
+	}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			content, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			scanned := parsePackageLockV3Lines(content)
+			if len(scanned) == 0 {
+				t.Fatal("line scanner read no dependencies")
+			}
+			decoded, err := decodePackageLock(content)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(scanned, decoded) {
+				t.Fatalf("line scanner gave %+v, decoder gave %+v", scanned, decoded)
+			}
+		})
+	}
+}
