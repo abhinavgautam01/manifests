@@ -2,6 +2,7 @@ package manifests
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
@@ -210,6 +211,110 @@ func TestNPMV2LockfileCRLF(t *testing.T) {
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("CRLF result differs from LF: got %d dependencies, want %d", len(got.Dependencies), len(want.Dependencies))
 			}
+		})
+	}
+}
+
+func sortedDependencies(deps []Dependency) []Dependency {
+	sorted := append([]Dependency(nil), deps...)
+	sort.Slice(sorted, func(i, j int) bool {
+		a, b := sorted[i], sorted[j]
+		if a.Name != b.Name {
+			return a.Name < b.Name
+		}
+		return a.Version < b.Version
+	})
+	return sorted
+}
+
+// requireCompactEquivalence reparses the lockfile with its whitespace removed
+// and requires the same dependencies.
+func requireCompactEquivalence(t *testing.T, filename string, content []byte, want []Dependency) {
+	t.Helper()
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, content); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Parse(filename, compact.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(sortedDependencies(result.Dependencies), sortedDependencies(want)) {
+		t.Fatalf("compact JSON gave %+v, want %+v", result.Dependencies, want)
+	}
+}
+
+func TestNPMLockfileCompactJSON(t *testing.T) {
+	paths := []string{
+		"npm/package-lock.json",
+		"npm/npm-lockfile-version-1/package-lock.json",
+		"npm/npm-lockfile-version-2/package-lock.json",
+		"npm/npm-lockfile-version-3/package-lock.json",
+		"npm/npm-local-file/package-lock.json",
+		"misc/multiple_versions/package-lock.json",
+	}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			content, err := os.ReadFile("testdata/" + path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := Parse("package-lock.json", content)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(want.Dependencies) == 0 {
+				t.Fatal("fixture has no dependencies")
+			}
+			requireCompactEquivalence(t, "package-lock.json", content, want.Dependencies)
+		})
+	}
+}
+
+func TestNPMLockfileRootEntryLast(t *testing.T) {
+	content := []byte(`{"lockfileVersion":3,"packages":{` +
+		`"node_modules/direct":{"version":"1.0.0"},` +
+		`"node_modules/transitive":{"version":"2.0.0"},` +
+		`"":{"name":"example","dependencies":{"direct":"^1.0.0"}}}}`)
+	result, err := Parse("package-lock.json", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Dependency{
+		{Name: "direct", Version: "1.0.0", Scope: Runtime, Direct: true, PURL: "pkg:npm/direct@1.0.0"},
+		{Name: "transitive", Version: "2.0.0", Scope: Runtime, PURL: "pkg:npm/transitive@2.0.0"},
+	}
+	if !reflect.DeepEqual(result.Dependencies, want) {
+		t.Fatalf("got %+v, want %+v", result.Dependencies, want)
+	}
+}
+
+func TestNPMV1LockfilePackagesDependency(t *testing.T) {
+	content := []byte(`{
+  "lockfileVersion": 1,
+  "dependencies": {
+    "packages": {
+      "version": "0.0.8"
+    },
+    "is-number": {
+      "version": "7.0.0"
+    }
+  }
+}`)
+	want := []Dependency{
+		{Name: "is-number", Version: "7.0.0", Scope: Runtime, PURL: "pkg:npm/is-number@7.0.0"},
+		{Name: "packages", Version: "0.0.8", Scope: Runtime, PURL: "pkg:npm/packages@0.0.8"},
+	}
+	for _, filename := range []string{"package-lock.json", "npm-shrinkwrap.json"} {
+		t.Run(filename, func(t *testing.T) {
+			result, err := Parse(filename, content)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(sortedDependencies(result.Dependencies), want) {
+				t.Fatalf("got %+v, want %+v", result.Dependencies, want)
+			}
+			requireCompactEquivalence(t, filename, content, want)
 		})
 	}
 }

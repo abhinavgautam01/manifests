@@ -41,7 +41,8 @@ func TestNPMLargeLockfile(t *testing.T) {
 	const count = 10000
 	for _, format := range []int{1, 3} {
 		t.Run(fmt.Sprintf("v%d", format), func(t *testing.T) {
-			result, err := Parse("package-lock.json", npmLockHistory(t, format, count))
+			data := npmLockHistory(t, format, count)
+			result, err := Parse("package-lock.json", data)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -61,6 +62,7 @@ func TestNPMLargeLockfile(t *testing.T) {
 					t.Fatalf("unexpected direct flag: %+v", dep)
 				}
 			}
+			requireCompactEquivalence(t, "package-lock.json", data, result.Dependencies)
 		})
 	}
 }
