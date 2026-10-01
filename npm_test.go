@@ -288,3 +288,33 @@ func TestNPMLockfileRootEntryLast(t *testing.T) {
 		t.Fatalf("got %+v, want %+v", result.Dependencies, want)
 	}
 }
+
+func TestNPMV1LockfilePackagesDependency(t *testing.T) {
+	content := []byte(`{
+  "lockfileVersion": 1,
+  "dependencies": {
+    "packages": {
+      "version": "0.0.8"
+    },
+    "is-number": {
+      "version": "7.0.0"
+    }
+  }
+}`)
+	want := []Dependency{
+		{Name: "is-number", Version: "7.0.0", Scope: Runtime, PURL: "pkg:npm/is-number@7.0.0"},
+		{Name: "packages", Version: "0.0.8", Scope: Runtime, PURL: "pkg:npm/packages@0.0.8"},
+	}
+	for _, filename := range []string{"package-lock.json", "npm-shrinkwrap.json"} {
+		t.Run(filename, func(t *testing.T) {
+			result, err := Parse(filename, content)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(sortedDependencies(result.Dependencies), want) {
+				t.Fatalf("got %+v, want %+v", result.Dependencies, want)
+			}
+			requireCompactEquivalence(t, filename, content, want)
+		})
+	}
+}

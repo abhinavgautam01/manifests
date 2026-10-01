@@ -163,13 +163,15 @@ type packageLockRoot struct {
 	PeerDependencies     map[string]json.RawMessage `json:"peerDependencies"`
 }
 
-var packageLockPackagesKey = []byte(`"packages"`)
+const packageLockPackagesField = "packages"
+
+var packageLockPackagesKey = []byte(`"` + packageLockPackagesField + `"`)
 
 var errPackageLock = errors.New("malformed JSON")
 
 func (p *npmPackageLockParser) Parse(filename string, content []byte) (*core.Result, error) {
 	// Without a packages section the lockfile is v1: nested dependencies only.
-	if !bytes.Contains(content, packageLockPackagesKey) {
+	if !bytes.Contains(content, packageLockPackagesKey) || !hasPackageLockPackages(content) {
 		var lock packageLockJSON
 		if err := json.Unmarshal(content, &lock); err != nil {
 			return nil, &core.ParseError{Filename: filename, Err: err}
@@ -189,6 +191,26 @@ func (p *npmPackageLockParser) Parse(filename string, content []byte) (*core.Res
 		return nil, &core.ParseError{Filename: filename, Err: err}
 	}
 	return &core.Result{Dependencies: deps}, nil
+}
+
+func hasPackageLockPackages(content []byte) bool {
+	decoder := json.NewDecoder(bytes.NewReader(content))
+	if !decodeJSONObjectOpening(decoder) {
+		return false
+	}
+	for decoder.More() {
+		key, ok := decodeJSONKey(decoder)
+		if !ok {
+			return false
+		}
+		if key == packageLockPackagesField {
+			return true
+		}
+		if !skipJSONValue(decoder) {
+			return false
+		}
+	}
+	return false
 }
 
 func parsePackageLockV1(deps map[string]packageLockDep) []core.Dependency {
@@ -288,7 +310,7 @@ func parsePackageLockDirectDependencies(content []byte) map[string]bool {
 		if !ok {
 			return nil
 		}
-		if key == "packages" {
+		if key == packageLockPackagesField {
 			return decodePackageLockRootDependencies(decoder)
 		}
 		if !skipJSONValue(decoder) {
@@ -509,7 +531,7 @@ func decodePackageLock(content []byte) ([]core.Dependency, error) {
 			return nil, errPackageLock
 		}
 		switch key {
-		case "packages":
+		case packageLockPackagesField:
 			if !decodeJSONObjectOpening(decoder) {
 				return nil, errPackageLock
 			}
