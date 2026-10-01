@@ -133,6 +133,11 @@ func (p *pnpmLockParser) Parse(filename string, content []byte) (*core.Result, e
 			return true
 		}
 
+		// Comment-only lines carry no data and must not set the indent or end the section
+		if inPackages && core.IsYAMLComment(line) {
+			return true
+		}
+
 		// End of packages section (new top-level key)
 		if inPackages && isTopLevelKey(line) {
 			deps = buildDependency(deps, state)

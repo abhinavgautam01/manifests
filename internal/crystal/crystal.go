@@ -115,7 +115,8 @@ func (p *shardLockParser) Parse(filename string, content []byte) (*core.Result, 
 			return true
 		}
 
-		if !inShards {
+		// Comment-only lines carry no data and must not set the indent
+		if !inShards || core.IsYAMLComment(line) {
 			return true
 		}
 

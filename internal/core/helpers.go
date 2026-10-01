@@ -24,6 +24,11 @@ func LeadingSpaces(line string) int {
 	return n
 }
 
+// IsYAMLComment reports whether line holds only a YAML comment.
+func IsYAMLComment(line string) bool {
+	return strings.HasPrefix(strings.TrimLeft(line, " "), "#")
+}
+
 // ForEachLine iterates over lines in content without allocating a slice.
 func ForEachLine(content string, fn func(line string) bool) {
 	for len(content) > 0 {
