@@ -10,16 +10,17 @@ func init() {
 }
 
 // extractPnpmPackageKey extracts package key from "  /name/ver:" or "  '@scope/name@ver':" lines
-func extractPnpmPackageKey(line string) (string, bool) {
-	// Must start with exactly 2 spaces so nested keys (peerDependenciesMeta etc) are skipped
-	if len(line) < 4 || line[0] != ' ' || line[1] != ' ' || line[2] == ' ' {
+// indented by exactly indent spaces.
+func extractPnpmPackageKey(line string, indent int) (string, bool) {
+	// Must start with exactly indent spaces so nested keys (peerDependenciesMeta etc) are skipped
+	if indent == 0 || len(line) < indent+2 || core.LeadingSpaces(line) != indent {
 		return "", false
 	}
 	// Must end with colon
 	if line[len(line)-1] != ':' {
 		return "", false
 	}
-	key := line[2 : len(line)-1]
+	key := line[indent : len(line)-1]
 	// Remove surrounding quotes if present
 	if len(key) >= 2 && (key[0] == '\'' || key[0] == '"') {
 		key = key[1 : len(key)-1]
@@ -122,11 +123,18 @@ func (p *pnpmLockParser) Parse(filename string, content []byte) (*core.Result, e
 	deps := make([]core.Dependency, 0, core.EstimateDeps(len(content)))
 
 	inPackages := false
+	indent := 0
 	var state pnpmPackageState
 
 	core.ForEachLine(text, func(line string) bool {
 		if line == "packages:" {
 			inPackages = true
+			indent = 0
+			return true
+		}
+
+		// Comment-only lines carry no data and must not set the indent or end the section
+		if inPackages && core.IsYAMLComment(line) {
 			return true
 		}
 
@@ -142,8 +150,13 @@ func (p *pnpmLockParser) Parse(filename string, content []byte) (*core.Result, e
 			return true
 		}
 
-		// Package key line (2-space indent)
-		if key, ok := extractPnpmPackageKey(line); ok {
+		// The first indented line sets the indent width of package keys
+		if indent == 0 && strings.TrimSpace(line) != "" {
+			indent = core.LeadingSpaces(line)
+		}
+
+		// Package key line
+		if key, ok := extractPnpmPackageKey(line, indent); ok {
 			deps = buildDependency(deps, state)
 			state = pnpmPackageState{key: key}
 			return true

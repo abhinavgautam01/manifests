@@ -2,6 +2,8 @@ package crystal
 
 import (
 	"os"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/git-pkgs/manifests/internal/core"
@@ -97,5 +99,36 @@ func TestShardLock(t *testing.T) {
 		if dep.Version != wantVer {
 			t.Errorf("%s version = %q, want %q", name, dep.Version, wantVer)
 		}
+	}
+}
+
+func TestShardLockIndentWidth(t *testing.T) {
+	// https://github.com/git-pkgs/manifests/issues/108
+	content, err := os.ReadFile("../../testdata/crystal/shard.lock")
+	if err != nil {
+		t.Fatalf("failed to read fixture: %v", err)
+	}
+
+	parser := &shardLockParser{}
+	want, err := parser.Parse("shard.lock", content)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	lines := strings.Split(string(content), "\n")
+	for i, line := range lines {
+		n := core.LeadingSpaces(line)
+		lines[i] = strings.Repeat(" ", n*2) + line[n:]
+	}
+
+	got, err := parser.Parse("shard.lock", []byte(strings.Join(lines, "\n")))
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if len(got.Dependencies) != 7 {
+		t.Fatalf("expected 7 dependencies, got %d", len(got.Dependencies))
+	}
+	if !reflect.DeepEqual(got.Dependencies, want.Dependencies) {
+		t.Errorf("reindented dependencies differ:\ngot  %+v\nwant %+v", got.Dependencies, want.Dependencies)
 	}
 }

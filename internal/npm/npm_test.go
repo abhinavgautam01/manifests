@@ -3,6 +3,7 @@ package npm
 import (
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/git-pkgs/manifests/internal/core"
@@ -995,23 +996,30 @@ func TestDenoLock(t *testing.T) {
 func TestExtractPnpmPackageKey(t *testing.T) {
 	tests := []struct {
 		line    string
+		indent  int
 		wantKey string
 		wantOk  bool
 	}{
-		{"  '@typescript-eslint/eslint-plugin@8.59.3':", "@typescript-eslint/eslint-plugin@8.59.3", true},
-		{"  acorn@5.7.4:", "acorn@5.7.4", true},
-		{"  /chalk/1.1.3:", "/chalk/1.1.3", true},
-		// Nested keys (>2-space indent) must be rejected.
+		{"  '@typescript-eslint/eslint-plugin@8.59.3':", 2, "@typescript-eslint/eslint-plugin@8.59.3", true},
+		{"  acorn@5.7.4:", 2, "acorn@5.7.4", true},
+		{"  /chalk/1.1.3:", 2, "/chalk/1.1.3", true},
+		// Nested keys (deeper than the package indent) must be rejected.
 		// https://github.com/git-pkgs/manifests/issues/32
-		{"      '@typescript-eslint/parser':", "", false},
-		{"    peerDependenciesMeta:", "", false},
-		{"packages:", "", false},
-		{"  resolution: {integrity: sha512-xxx}", "", false},
+		{"      '@typescript-eslint/parser':", 2, "", false},
+		{"    peerDependenciesMeta:", 2, "", false},
+		{"packages:", 2, "", false},
+		{"  resolution: {integrity: sha512-xxx}", 2, "", false},
+		// Package keys follow the indent width of the file.
+		// https://github.com/git-pkgs/manifests/issues/108
+		{"    acorn@5.7.4:", 4, "acorn@5.7.4", true},
+		{"  acorn@5.7.4:", 4, "", false},
+		{"        peerDependenciesMeta:", 4, "", false},
+		{"  acorn@5.7.4:", 0, "", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.line, func(t *testing.T) {
-			gotKey, gotOk := extractPnpmPackageKey(tt.line)
+			gotKey, gotOk := extractPnpmPackageKey(tt.line, tt.indent)
 			if gotOk != tt.wantOk {
 				t.Errorf("ok = %v, want %v", gotOk, tt.wantOk)
 			}
@@ -1058,6 +1066,50 @@ packages:
 	}
 	if res.Dependencies[1].Name != "eslint" || res.Dependencies[1].Version != "9.0.0" {
 		t.Errorf("dep[1] = %s@%s, want eslint@9.0.0", res.Dependencies[1].Name, res.Dependencies[1].Version)
+	}
+}
+
+// reindent multiplies the leading spaces of every line by factor.
+func reindent(content []byte, factor int) []byte {
+	lines := strings.Split(string(content), "\n")
+	for i, line := range lines {
+		n := core.LeadingSpaces(line)
+		lines[i] = strings.Repeat(" ", n*factor) + line[n:]
+	}
+	return []byte(strings.Join(lines, "\n"))
+}
+
+func TestPnpmLockIndentWidth(t *testing.T) {
+	// https://github.com/git-pkgs/manifests/issues/108
+	for _, fixture := range []string{
+		"pnpm-lock.yaml",
+		"pnpm-lockfile-version-5/pnpm-lock.yaml",
+		"pnpm-lockfile-version-6/pnpm-lock.yaml",
+		"pnpm-lockfile-version-9/pnpm-lock.yaml",
+	} {
+		t.Run(fixture, func(t *testing.T) {
+			content, err := os.ReadFile("../../testdata/npm/" + fixture)
+			if err != nil {
+				t.Fatalf("failed to read fixture: %v", err)
+			}
+
+			parser := &pnpmLockParser{}
+			want, err := parser.Parse("pnpm-lock.yaml", content)
+			if err != nil {
+				t.Fatalf("Parse failed: %v", err)
+			}
+			if len(want.Dependencies) == 0 {
+				t.Fatal("expected dependencies in original fixture")
+			}
+
+			got, err := parser.Parse("pnpm-lock.yaml", reindent(content, 2))
+			if err != nil {
+				t.Fatalf("Parse failed: %v", err)
+			}
+			if !reflect.DeepEqual(got.Dependencies, want.Dependencies) {
+				t.Errorf("reindented dependencies differ:\ngot  %+v\nwant %+v", got.Dependencies, want.Dependencies)
+			}
+		})
 	}
 }
 
