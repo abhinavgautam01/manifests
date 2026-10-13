@@ -16,18 +16,18 @@ func TestLockDependencyCapacity(t *testing.T) {
 		want          []Dependency
 	}{
 		{"composer.lock", `{"packages":[{"name":"vendor/runtime","version":"1.2.3","dist":{"shasum":"abc","sha256":"def"}}],"packages-dev":[{"name":"vendor/dev","version":"2.0.0","dist":{"shasum":"abc"}}]}`, []Dependency{
-			{Name: "vendor/runtime", Version: "1.2.3", Scope: Runtime, Integrity: "sha256-def", PURL: "pkg:composer/vendor/runtime@1.2.3"},
-			{Name: "vendor/dev", Version: "2.0.0", Scope: Development, Integrity: "sha1-abc", PURL: "pkg:composer/vendor/dev@2.0.0"},
+			{Name: "vendor/runtime", Version: "1.2.3", Scope: Runtime, Integrity: "sha256-def", PURL: "pkg:composer/vendor/runtime@1.2.3", Ecosystem: "composer"},
+			{Name: "vendor/dev", Version: "2.0.0", Scope: Development, Integrity: "sha1-abc", PURL: "pkg:composer/vendor/dev@2.0.0", Ecosystem: "composer"},
 		}},
 		{"packages.lock.json", `{"version":1,"dependencies":{"net8.0":{"Alpha":{"type":"Direct","resolved":"1.2.3","contentHash":"abc"}},"net9.0":{"Alpha":{"type":"Direct","resolved":"1.2.3","contentHash":"abc"},"Beta":{"type":"Transitive","resolved":"2.0.0"}},"net10.0":{"Gamma":{"type":"Transitive","resolved":"3.0.0"}}}}`, []Dependency{
-			{Name: "Alpha", Version: "1.2.3", Scope: Runtime, Integrity: "sha512-abc", Direct: true, PURL: "pkg:nuget/Alpha@1.2.3"},
-			{Name: "Beta", Version: "2.0.0", Scope: Runtime, PURL: "pkg:nuget/Beta@2.0.0"},
-			{Name: "Gamma", Version: "3.0.0", Scope: Runtime, PURL: "pkg:nuget/Gamma@3.0.0"},
+			{Name: "Alpha", Version: "1.2.3", Scope: Runtime, Integrity: "sha512-abc", Direct: true, PURL: "pkg:nuget/Alpha@1.2.3", Ecosystem: "nuget"},
+			{Name: "Beta", Version: "2.0.0", Scope: Runtime, PURL: "pkg:nuget/Beta@2.0.0", Ecosystem: "nuget"},
+			{Name: "Gamma", Version: "3.0.0", Scope: Runtime, PURL: "pkg:nuget/Gamma@3.0.0", Ecosystem: "nuget"},
 		}},
 		{"project.assets.json", `{"targets":{"net8.0":{"Alpha/1.2.3":{"type":"package"},"App/1.0":{"type":"project"},"invalid":{"type":"package"}},"net9.0":{"Alpha/1.2.3":{"type":"package"},"Beta/2.0.0":{"type":"package"}},"net10.0":{"Gamma/3.0.0":{"type":"package"}}},"libraries":{"Alpha/1.2.3":{"sha512":"abc"}}}`, []Dependency{
-			{Name: "Alpha", Version: "1.2.3", Scope: Runtime, Integrity: "sha512-abc", PURL: "pkg:nuget/Alpha@1.2.3"},
-			{Name: "Beta", Version: "2.0.0", Scope: Runtime, PURL: "pkg:nuget/Beta@2.0.0"},
-			{Name: "Gamma", Version: "3.0.0", Scope: Runtime, PURL: "pkg:nuget/Gamma@3.0.0"},
+			{Name: "Alpha", Version: "1.2.3", Scope: Runtime, Integrity: "sha512-abc", PURL: "pkg:nuget/Alpha@1.2.3", Ecosystem: "nuget"},
+			{Name: "Beta", Version: "2.0.0", Scope: Runtime, PURL: "pkg:nuget/Beta@2.0.0", Ecosystem: "nuget"},
+			{Name: "Gamma", Version: "3.0.0", Scope: Runtime, PURL: "pkg:nuget/Gamma@3.0.0", Ecosystem: "nuget"},
 		}},
 	}
 	for _, name := range []string{"example.deps.json", "Project.lock.json"} {
@@ -35,8 +35,8 @@ func TestLockDependencyCapacity(t *testing.T) {
 			name, content string
 			want          []Dependency
 		}{name, `{"libraries":{"Alpha/1.2.3":{"type":"package","sha512":"abc"},"Beta/2.0.0":{"type":"package"},"App/1.0":{"type":"project"},"invalid":{"type":"package"}}}`, []Dependency{
-			{Name: "Alpha", Version: "1.2.3", Scope: Runtime, Integrity: "sha512-abc", PURL: "pkg:nuget/Alpha@1.2.3"},
-			{Name: "Beta", Version: "2.0.0", Scope: Runtime, PURL: "pkg:nuget/Beta@2.0.0"},
+			{Name: "Alpha", Version: "1.2.3", Scope: Runtime, Integrity: "sha512-abc", PURL: "pkg:nuget/Alpha@1.2.3", Ecosystem: "nuget"},
+			{Name: "Beta", Version: "2.0.0", Scope: Runtime, PURL: "pkg:nuget/Beta@2.0.0", Ecosystem: "nuget"},
 		}})
 	}
 	for _, tt := range tests {

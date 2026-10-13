@@ -16,6 +16,8 @@
 package manifests
 
 import (
+	"cmp"
+
 	"github.com/git-pkgs/manifests/internal/core"
 	"github.com/git-pkgs/purl"
 )
@@ -138,16 +140,16 @@ func Parse(filename string, content []byte, opts ...Options) (*ParseResult, erro
 		res = &core.Result{}
 	}
 
-	// Generate PURLs for all dependencies
+	// Resolve the ecosystem and PURL of every dependency and declaration
 	for i := range res.Dependencies {
-		version := ""
-		if kind == Lockfile || kind == Supplement {
-			version = res.Dependencies[i].Version
-		}
-		res.Dependencies[i].PURL = makePURL(eco, res.Dependencies[i].Name, version, res.Dependencies[i].RegistryURL)
+		dep := &res.Dependencies[i]
+		dep.PURL = dependencyPURL(eco, kind, *dep)
+		dep.Ecosystem = entryEcosystem(eco, dep.Ecosystem, dep.NoPURL)
 	}
 	for i := range res.Declarations {
-		res.Declarations[i].PURL = declarationPURL(eco, res.Declarations[i])
+		declaration := &res.Declarations[i]
+		declaration.PURL = declarationPURL(eco, *declaration)
+		declaration.Ecosystem = entryEcosystem(eco, declaration.Ecosystem, declaration.NoPURL)
 	}
 
 	return &ParseResult{
@@ -165,13 +167,44 @@ func Parse(filename string, content []byte, opts ...Options) (*ParseResult, erro
 	}, nil
 }
 
-// declarationPURL preserves a parser-supplied package identity or builds one
-// from the parser's ecosystem.
+// entryEcosystem returns the ecosystem a parser set on a dependency or
+// declaration, falling back to the parser's. Entries without a package
+// identity have no ecosystem.
+func entryEcosystem(ecosystem, entry string, noPURL bool) string {
+	if noPURL {
+		return ""
+	}
+	return cmp.Or(entry, ecosystem)
+}
+
+// dependencyPURL preserves a parser-supplied package identity or builds one
+// from the dependency's ecosystem, falling back to the parser's. Only
+// lockfiles and supplements include the version.
+func dependencyPURL(ecosystem string, kind Kind, dep core.Dependency) string {
+	if dep.NoPURL {
+		return ""
+	}
+	if dep.PURL != "" {
+		return dep.PURL
+	}
+	version := ""
+	if kind == Lockfile || kind == Supplement {
+		version = dep.Version
+	}
+	return makePURL(entryEcosystem(ecosystem, dep.Ecosystem, false), dep.Name, version, dep.RegistryURL)
+}
+
+// declarationPURL preserves a parser-supplied package identity or builds a
+// versionless one from the declaration's ecosystem, falling back to the
+// parser's.
 func declarationPURL(ecosystem string, declaration core.Declaration) string {
+	if declaration.NoPURL {
+		return ""
+	}
 	if declaration.PURL != "" {
 		return declaration.PURL
 	}
-	return makePURL(ecosystem, declaration.Name, "", "")
+	return makePURL(entryEcosystem(ecosystem, declaration.Ecosystem, false), declaration.Name, "", "")
 }
 
 // makePURL creates a Package URL for a dependency.
