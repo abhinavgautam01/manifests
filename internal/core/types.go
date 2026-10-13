@@ -59,9 +59,11 @@ type Dependency struct {
 	// otherwise builds it from Ecosystem, Name and, for lockfiles and
 	// supplements, Version.
 	PURL string
-	// Ecosystem is the PURL type of this dependency when it differs from the
-	// file's ecosystem, such as an npm package imported from deno.json. Empty
-	// means the file's ecosystem.
+	// Ecosystem is the dependency's ecosystem name, in the same form as
+	// ParseResult.Ecosystem. A parser sets it when the package belongs to a
+	// different ecosystem than the file, such as an npm package imported from
+	// deno.json. Parse fills in the file's ecosystem otherwise and leaves it
+	// empty when NoPURL is set.
 	Ecosystem string
 	// NoPURL marks a source-only entry, such as a direct download URL, whose
 	// package identity is unknown. Parse leaves its PURL empty.
@@ -87,8 +89,10 @@ type Declaration struct {
 	// PURL identifies the declared package without a version. Parsers may set
 	// it when a file can contain references from more than one ecosystem.
 	PURL string
-	// Ecosystem is the PURL type of this declaration when it differs from the
-	// file's ecosystem. Empty means the file's ecosystem.
+	// Ecosystem is the declaration's ecosystem name, in the same form as
+	// ParseResult.Ecosystem. A parser sets it when the package belongs to a
+	// different ecosystem than the file. Parse fills in the file's ecosystem
+	// otherwise and leaves it empty when NoPURL is set.
 	Ecosystem string
 	// NoPURL marks a source-only entry whose package identity is unknown.
 	// Parse leaves its PURL empty.

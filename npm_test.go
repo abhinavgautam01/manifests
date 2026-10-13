@@ -105,10 +105,10 @@ func TestNPMLockfileNestedDependencies(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []Dependency{
-		{Name: "@scope/leaf", Version: "3.0.0", Scope: Development, Integrity: "sha512-leaf", PURL: "pkg:npm/%40scope/leaf@3.0.0"},
-		{Name: "parent", Version: "1.0.0", Scope: Development, PURL: "pkg:npm/parent@1.0.0"},
-		{Name: "shared", Version: "2.0.0", Scope: Optional, PURL: "pkg:npm/shared@2.0.0"},
-		{Name: "shared", Version: "4.0.0", Scope: Runtime, PURL: "pkg:npm/shared@4.0.0"},
+		{Name: "@scope/leaf", Version: "3.0.0", Scope: Development, Integrity: "sha512-leaf", PURL: "pkg:npm/%40scope/leaf@3.0.0", Ecosystem: "npm"},
+		{Name: "parent", Version: "1.0.0", Scope: Development, PURL: "pkg:npm/parent@1.0.0", Ecosystem: "npm"},
+		{Name: "shared", Version: "2.0.0", Scope: Optional, PURL: "pkg:npm/shared@2.0.0", Ecosystem: "npm"},
+		{Name: "shared", Version: "4.0.0", Scope: Runtime, PURL: "pkg:npm/shared@4.0.0", Ecosystem: "npm"},
 	}
 	sort.Slice(result.Dependencies, func(i, j int) bool {
 		a, b := result.Dependencies[i], result.Dependencies[j]
@@ -159,9 +159,9 @@ func TestNPMLockfileLineIteration(t *testing.T) {
 						t.Fatal(err)
 					}
 					want := []Dependency{
-						{Name: "direct", Version: "1.0.0", Scope: Runtime, Direct: true, Integrity: integrity, PURL: "pkg:npm/direct@1.0.0"},
-						{Name: "@scope/nested", Version: "2.0.0", Scope: Development, PURL: "pkg:npm/%40scope/nested@2.0.0"},
-						{Name: "last", Version: "3.0.0", Scope: Optional, PURL: "pkg:npm/last@3.0.0"},
+						{Name: "direct", Version: "1.0.0", Scope: Runtime, Direct: true, Integrity: integrity, PURL: "pkg:npm/direct@1.0.0", Ecosystem: "npm"},
+						{Name: "@scope/nested", Version: "2.0.0", Scope: Development, PURL: "pkg:npm/%40scope/nested@2.0.0", Ecosystem: "npm"},
+						{Name: "last", Version: "3.0.0", Scope: Optional, PURL: "pkg:npm/last@3.0.0", Ecosystem: "npm"},
 					}
 					if !reflect.DeepEqual(result.Dependencies, want) {
 						t.Fatal("dependency fields or order differ")
@@ -281,8 +281,8 @@ func TestNPMLockfileRootEntryLast(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []Dependency{
-		{Name: "direct", Version: "1.0.0", Scope: Runtime, Direct: true, PURL: "pkg:npm/direct@1.0.0"},
-		{Name: "transitive", Version: "2.0.0", Scope: Runtime, PURL: "pkg:npm/transitive@2.0.0"},
+		{Name: "direct", Version: "1.0.0", Scope: Runtime, Direct: true, PURL: "pkg:npm/direct@1.0.0", Ecosystem: "npm"},
+		{Name: "transitive", Version: "2.0.0", Scope: Runtime, PURL: "pkg:npm/transitive@2.0.0", Ecosystem: "npm"},
 	}
 	if !reflect.DeepEqual(result.Dependencies, want) {
 		t.Fatalf("got %+v, want %+v", result.Dependencies, want)
@@ -302,8 +302,8 @@ func TestNPMV1LockfilePackagesDependency(t *testing.T) {
   }
 }`)
 	want := []Dependency{
-		{Name: "is-number", Version: "7.0.0", Scope: Runtime, PURL: "pkg:npm/is-number@7.0.0"},
-		{Name: "packages", Version: "0.0.8", Scope: Runtime, PURL: "pkg:npm/packages@0.0.8"},
+		{Name: "is-number", Version: "7.0.0", Scope: Runtime, PURL: "pkg:npm/is-number@7.0.0", Ecosystem: "npm"},
+		{Name: "packages", Version: "0.0.8", Scope: Runtime, PURL: "pkg:npm/packages@0.0.8", Ecosystem: "npm"},
 	}
 	for _, filename := range []string{"package-lock.json", "npm-shrinkwrap.json"} {
 		t.Run(filename, func(t *testing.T) {

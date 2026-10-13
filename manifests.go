@@ -140,12 +140,16 @@ func Parse(filename string, content []byte, opts ...Options) (*ParseResult, erro
 		res = &core.Result{}
 	}
 
-	// Generate PURLs for all dependencies
+	// Resolve the ecosystem and PURL of every dependency and declaration
 	for i := range res.Dependencies {
-		res.Dependencies[i].PURL = dependencyPURL(eco, kind, res.Dependencies[i])
+		dep := &res.Dependencies[i]
+		dep.PURL = dependencyPURL(eco, kind, *dep)
+		dep.Ecosystem = entryEcosystem(eco, dep.Ecosystem, dep.NoPURL)
 	}
 	for i := range res.Declarations {
-		res.Declarations[i].PURL = declarationPURL(eco, res.Declarations[i])
+		declaration := &res.Declarations[i]
+		declaration.PURL = declarationPURL(eco, *declaration)
+		declaration.Ecosystem = entryEcosystem(eco, declaration.Ecosystem, declaration.NoPURL)
 	}
 
 	return &ParseResult{
@@ -163,6 +167,16 @@ func Parse(filename string, content []byte, opts ...Options) (*ParseResult, erro
 	}, nil
 }
 
+// entryEcosystem returns the ecosystem a parser set on a dependency or
+// declaration, falling back to the parser's. Entries without a package
+// identity have no ecosystem.
+func entryEcosystem(ecosystem, entry string, noPURL bool) string {
+	if noPURL {
+		return ""
+	}
+	return cmp.Or(entry, ecosystem)
+}
+
 // dependencyPURL preserves a parser-supplied package identity or builds one
 // from the dependency's ecosystem, falling back to the parser's. Only
 // lockfiles and supplements include the version.
@@ -177,7 +191,7 @@ func dependencyPURL(ecosystem string, kind Kind, dep core.Dependency) string {
 	if kind == Lockfile || kind == Supplement {
 		version = dep.Version
 	}
-	return makePURL(cmp.Or(dep.Ecosystem, ecosystem), dep.Name, version, dep.RegistryURL)
+	return makePURL(entryEcosystem(ecosystem, dep.Ecosystem, false), dep.Name, version, dep.RegistryURL)
 }
 
 // declarationPURL preserves a parser-supplied package identity or builds a
@@ -190,7 +204,7 @@ func declarationPURL(ecosystem string, declaration core.Declaration) string {
 	if declaration.PURL != "" {
 		return declaration.PURL
 	}
-	return makePURL(cmp.Or(declaration.Ecosystem, ecosystem), declaration.Name, "", "")
+	return makePURL(entryEcosystem(ecosystem, declaration.Ecosystem, false), declaration.Name, "", "")
 }
 
 // makePURL creates a Package URL for a dependency.

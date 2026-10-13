@@ -18,14 +18,14 @@ func (identityTestParser) Parse(string, []byte) (*core.Result, error) {
 		Dependencies: []core.Dependency{
 			{Name: "org.example:fallback", Version: "1.0.0"},
 			{Name: "lodash", Version: "4.17.21", Ecosystem: "npm"},
-			{Name: "tool", Version: "2.0.0", PURL: "pkg:generic/tool@2.0.0"},
+			{Name: "tool", Version: "2.0.0", PURL: "pkg:generic/tool@2.0.0", Ecosystem: "generic"},
 			{Name: "lib.jar", Version: "3.0.0", NoPURL: true, Source: jar},
 			{Name: "ignored", Version: "4.0.0", NoPURL: true, PURL: "pkg:generic/ignored@4.0.0"},
 		},
 		Declarations: []core.Declaration{
 			{Name: "org.example:fallback", Version: "1.0.0", Location: "fallback"},
 			{Name: "lodash", Version: "4.17.21", Ecosystem: "npm", Location: "lodash"},
-			{Name: "tool", Version: "2.0.0", PURL: "pkg:generic/tool", Location: "tool"},
+			{Name: "tool", Version: "2.0.0", PURL: "pkg:generic/tool", Ecosystem: "generic", Location: "tool"},
 			{Name: "lib.jar", Version: "3.0.0", NoPURL: true, Source: jar, Location: "lib.jar"},
 			{Name: "ignored", Version: "4.0.0", NoPURL: true, PURL: "pkg:generic/ignored", Location: "ignored"},
 		},
@@ -36,6 +36,10 @@ func init() {
 	core.Register("maven", core.Manifest, identityTestParser{}, core.ExactMatch("identity-test.manifest"))
 	core.Register("maven", core.Lockfile, identityTestParser{}, core.ExactMatch("identity-test.lock"))
 }
+
+// identityTestEcosystems lists the ecosystem Parse resolves for each entry
+// returned by identityTestParser. NoPURL entries have no ecosystem.
+var identityTestEcosystems = []string{"maven", "npm", "generic", "", ""}
 
 func TestDependencyPackageIdentity(t *testing.T) {
 	// https://github.com/git-pkgs/manifests/issues/111
@@ -75,6 +79,9 @@ func TestDependencyPackageIdentity(t *testing.T) {
 				if dep.PURL != tt.want[i] {
 					t.Errorf("%s PURL = %q, want %q", dep.Name, dep.PURL, tt.want[i])
 				}
+				if dep.Ecosystem != identityTestEcosystems[i] {
+					t.Errorf("%s Ecosystem = %q, want %q", dep.Name, dep.Ecosystem, identityTestEcosystems[i])
+				}
 			}
 			if got := result.Dependencies[3].Source.Value; got != "https://example.com/lib.jar" {
 				t.Errorf("lib.jar Source.Value = %q, want the download URL", got)
@@ -106,6 +113,9 @@ func TestDeclarationPackageIdentity(t *testing.T) {
 				if declaration.PURL != want[i] {
 					t.Errorf("%s PURL = %q, want %q", declaration.Name, declaration.PURL, want[i])
 				}
+				if declaration.Ecosystem != identityTestEcosystems[i] {
+					t.Errorf("%s Ecosystem = %q, want %q", declaration.Name, declaration.Ecosystem, identityTestEcosystems[i])
+				}
 			}
 		})
 	}
@@ -123,6 +133,37 @@ func TestManifestDependencyAndDeclarationIdentitiesMatch(t *testing.T) {
 		if dep.PURL != declaration.PURL {
 			t.Errorf("%s dependency PURL %q != declaration PURL %q", dep.Name, dep.PURL, declaration.PURL)
 		}
+		if dep.Ecosystem != declaration.Ecosystem {
+			t.Errorf("%s dependency Ecosystem %q != declaration Ecosystem %q", dep.Name, dep.Ecosystem, declaration.Ecosystem)
+		}
+	}
+}
+
+func TestParseSetsFileEcosystemWhenParserDoesNotOptIn(t *testing.T) {
+	for _, path := range []string{"testdata/npm/package.json", "testdata/npm/package-lock.json"} {
+		t.Run(path, func(t *testing.T) {
+			content, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("failed to read fixture: %v", err)
+			}
+			result, err := Parse(filepath.Base(path), content)
+			if err != nil {
+				t.Fatalf("Parse failed: %v", err)
+			}
+			if len(result.Dependencies) == 0 {
+				t.Fatal("expected dependencies")
+			}
+			for _, dep := range result.Dependencies {
+				if dep.Ecosystem != "npm" {
+					t.Errorf("%s Ecosystem = %q, want npm", dep.Name, dep.Ecosystem)
+				}
+			}
+			for _, declaration := range result.Declarations {
+				if declaration.Ecosystem != "npm" {
+					t.Errorf("%s declaration Ecosystem = %q, want npm", declaration.Name, declaration.Ecosystem)
+				}
+			}
+		})
 	}
 }
 
@@ -165,6 +206,13 @@ func TestDenoNPMImportPURLs(t *testing.T) {
 			for _, dep := range result.Dependencies {
 				if want := tt.want[dep.Name]; dep.PURL != want {
 					t.Errorf("%s PURL = %q, want %q", dep.Name, dep.PURL, want)
+				}
+				wantEcosystem := "deno"
+				if dep.Name == "chalk" || dep.Name == "lodash" {
+					wantEcosystem = "npm"
+				}
+				if dep.Ecosystem != wantEcosystem {
+					t.Errorf("%s Ecosystem = %q, want %q", dep.Name, dep.Ecosystem, wantEcosystem)
 				}
 			}
 		})
