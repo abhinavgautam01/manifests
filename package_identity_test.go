@@ -218,3 +218,57 @@ func TestDenoNPMImportPURLs(t *testing.T) {
 		})
 	}
 }
+
+func TestDenoImportSources(t *testing.T) {
+	// https://github.com/git-pkgs/manifests/issues/116
+	content := []byte(`{"imports": {
+  "chalk": "npm:chalk@5.3.0",
+  "@std/fs": "jsr:@std/fs",
+  "$utils/": "./src/utils/",
+  "std/": "http://deno.land/std@0.200.0/",
+  "react": "https://esm.sh/react@18",
+  "local": "file:///tmp/mod.ts",
+  "fs": "node:fs",
+  "inline": "data:text/javascript,export default 1",
+  "bare": "lodash"
+}}`)
+
+	want := map[string]struct {
+		purl, ecosystem string
+		source          Source
+	}{
+		"chalk":   {"pkg:npm/chalk", "npm", Source{}},
+		"@std/fs": {"pkg:deno/%40std%2Ffs", "deno", Source{}},
+		"$utils/": {"", "", Source{Kind: SourcePath, Value: "./src/utils/"}},
+		"std/":    {"", "", Source{Kind: SourceURL, Value: "http://deno.land/std@0.200.0/"}},
+		"react":   {"", "", Source{Kind: SourceURL, Value: "https://esm.sh/react@18"}},
+		"local":   {"", "", Source{Kind: SourcePath, Value: "file:///tmp/mod.ts"}},
+	}
+
+	result, err := Parse("deno.json", content)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if len(result.Dependencies) != len(want) {
+		t.Fatalf("got %d dependencies, want %d: %+v", len(result.Dependencies), len(want), result.Dependencies)
+	}
+	for _, dep := range result.Dependencies {
+		w, ok := want[dep.Name]
+		if !ok {
+			t.Errorf("unexpected dependency %q", dep.Name)
+			continue
+		}
+		if dep.PURL != w.purl {
+			t.Errorf("%s PURL = %q, want %q", dep.Name, dep.PURL, w.purl)
+		}
+		if dep.Ecosystem != w.ecosystem {
+			t.Errorf("%s Ecosystem = %q, want %q", dep.Name, dep.Ecosystem, w.ecosystem)
+		}
+		if dep.Source != w.source {
+			t.Errorf("%s Source = %+v, want %+v", dep.Name, dep.Source, w.source)
+		}
+		if dep.NoPURL != (w.purl == "") {
+			t.Errorf("%s NoPURL = %v, want %v", dep.Name, dep.NoPURL, w.purl == "")
+		}
+	}
+}
