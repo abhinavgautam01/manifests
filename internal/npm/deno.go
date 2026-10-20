@@ -30,16 +30,9 @@ func (p *denoJSONParser) Parse(filename string, content []byte) (*core.Result, e
 
 	var deps []core.Dependency
 
-	for _, spec := range deno.Imports {
-		name, version := parseDenoSpec(spec)
-		if name != "" {
-			deps = append(deps, core.Dependency{
-				Name:      name,
-				Version:   version,
-				Scope:     core.Runtime,
-				Direct:    true,
-				Ecosystem: denoSpecEcosystem(spec),
-			})
+	for key, spec := range deno.Imports {
+		if dep, ok := denoImportDependency(key, spec); ok {
+			deps = append(deps, dep)
 		}
 	}
 
@@ -103,35 +96,32 @@ func (p *denoLockParser) Parse(filename string, content []byte) (*core.Result, e
 	return &core.Result{Dependencies: deps}, nil
 }
 
-// parseDenoSpec parses a deno import spec like "npm:chalk@5.3.0" or "jsr:@std/path@^1.0.0".
-func parseDenoSpec(spec string) (name, version string) {
-	// Handle npm: prefix
-	if strings.HasPrefix(spec, "npm:") {
-		spec = strings.TrimPrefix(spec, "npm:")
-		return parseNPMSpec(spec)
+// denoImportDependency converts a deno.json import map entry into a dependency.
+// npm: and jsr: specifiers are packages. Remote URLs and local paths are
+// source-only entries named by their import map key, with no package identity.
+// Runtime builtins such as node:fs, inline data: modules and bare values are
+// not dependencies, so they are skipped.
+func denoImportDependency(key, spec string) (core.Dependency, bool) {
+	dep := core.Dependency{Scope: core.Runtime, Direct: true}
+	switch {
+	case strings.HasPrefix(spec, "npm:"):
+		dep.Name, dep.Version = parseNPMSpec(strings.TrimPrefix(spec, "npm:"))
+		dep.Ecosystem = "npm"
+	case strings.HasPrefix(spec, "jsr:"):
+		dep.Name, dep.Version = parseJSRSpec(strings.TrimPrefix(spec, "jsr:"))
+	case strings.HasPrefix(spec, "http://"), strings.HasPrefix(spec, "https://"):
+		dep.Name = key
+		dep.NoPURL = true
+		dep.Source = core.Source{Kind: core.SourceURL, Value: spec}
+	case strings.HasPrefix(spec, "./"), strings.HasPrefix(spec, "../"),
+		strings.HasPrefix(spec, "/"), strings.HasPrefix(spec, "file:"):
+		dep.Name = key
+		dep.NoPURL = true
+		dep.Source = core.Source{Kind: core.SourcePath, Value: spec}
+	default:
+		return core.Dependency{}, false
 	}
-
-	// Handle jsr: prefix
-	if strings.HasPrefix(spec, "jsr:") {
-		spec = strings.TrimPrefix(spec, "jsr:")
-		return parseJSRSpec(spec)
-	}
-
-	// Handle https: URLs (skip for now)
-	if strings.HasPrefix(spec, "https:") {
-		return "", ""
-	}
-
-	return spec, ""
-}
-
-// denoSpecEcosystem returns the package ecosystem of an npm: import, or empty
-// so the dependency keeps the deno ecosystem.
-func denoSpecEcosystem(spec string) string {
-	if strings.HasPrefix(spec, "npm:") {
-		return "npm"
-	}
-	return ""
+	return dep, dep.Name != ""
 }
 
 // parseNPMSpec parses an npm spec like "chalk@5.3.0" or "chalk".

@@ -945,6 +945,45 @@ func TestDenoJSON(t *testing.T) {
 	}
 }
 
+func TestDenoImportDependency(t *testing.T) {
+	// https://github.com/git-pkgs/manifests/issues/116
+	tests := []struct {
+		key, spec string
+		want      core.Dependency
+		wantOk    bool
+	}{
+		{"chalk", "npm:chalk@5.3.0", core.Dependency{Name: "chalk", Version: "5.3.0", Ecosystem: "npm"}, true},
+		{"@std/path", "jsr:@std/path@^1.0.0", core.Dependency{Name: "@std/path", Version: "^1.0.0"}, true},
+		{"std/", "http://deno.land/std@0.200.0/", core.Dependency{Name: "std/", NoPURL: true, Source: core.Source{Kind: core.SourceURL, Value: "http://deno.land/std@0.200.0/"}}, true},
+		{"react", "https://esm.sh/react@18", core.Dependency{Name: "react", NoPURL: true, Source: core.Source{Kind: core.SourceURL, Value: "https://esm.sh/react@18"}}, true},
+		{"$utils/", "./src/utils/", core.Dependency{Name: "$utils/", NoPURL: true, Source: core.Source{Kind: core.SourcePath, Value: "./src/utils/"}}, true},
+		{"shared", "../shared/mod.ts", core.Dependency{Name: "shared", NoPURL: true, Source: core.Source{Kind: core.SourcePath, Value: "../shared/mod.ts"}}, true},
+		{"abs", "/opt/lib/mod.ts", core.Dependency{Name: "abs", NoPURL: true, Source: core.Source{Kind: core.SourcePath, Value: "/opt/lib/mod.ts"}}, true},
+		{"local", "file:///tmp/mod.ts", core.Dependency{Name: "local", NoPURL: true, Source: core.Source{Kind: core.SourcePath, Value: "file:///tmp/mod.ts"}}, true},
+		{"fs", "node:fs", core.Dependency{}, false},
+		{"inline", "data:text/javascript,export default 1", core.Dependency{}, false},
+		{"bare", "lodash", core.Dependency{}, false},
+		{"", "https://esm.sh/react@18", core.Dependency{}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.spec, func(t *testing.T) {
+			got, ok := denoImportDependency(tt.key, tt.spec)
+			if ok != tt.wantOk {
+				t.Fatalf("ok = %v, want %v", ok, tt.wantOk)
+			}
+			if !ok {
+				return
+			}
+			tt.want.Scope = core.Runtime
+			tt.want.Direct = true
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("got %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDenoLock(t *testing.T) {
 	content, err := os.ReadFile("../../testdata/npm/deno.lock")
 	if err != nil {

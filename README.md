@@ -331,6 +331,11 @@ or local paths. Chef Git and GitHub sources also retain literal `branch`, `tag`,
 Direct artifact or catalog URLs, such as Vagrant `box_url` values, use the
 `url` source kind and retain the complete literal URL.
 
+In `deno.json`, remote URL imports use the `url` source kind. Local path and
+`file:` imports use the `path` source kind. Both are source-only entries named
+by their import map key, with `NoPURL` set. Runtime builtins such as `node:fs`,
+inline `data:` modules and bare values are not reported as dependencies.
+
 Parsers that do not preserve source locations leave `Declarations` empty.
 Declarations are available for `package.json`, Cargo manifests, `go.mod`, Python
 requirements files, `pyproject.toml`, GitHub Actions workflows, `gleam.toml`,
