@@ -83,9 +83,22 @@ func main() {
 | pub | pubspec.yaml | pubspec.lock |
 | pypi | requirements.txt, Pipfile, pyproject.toml, setup.py, setup.cfg | Pipfile.lock, poetry.lock, pdm.lock, uv.lock, pip-dependency-graph.json, pip-resolved-dependencies.txt, pylock.toml |
 | rpm | *.spec | |
-| swift | Package.swift | Package.resolved |
+| swift | Package.swift, Package@swift-*.swift | Package.resolved |
 | vagrant | Vagrantfile | |
 | vcpkg | vcpkg.json | |
+
+### Swift output
+
+Swift manifests are read without executing Swift, so variables, conditions,
+helper functions and interpolated strings are not evaluated. Packages used by
+test targets get `test` scope, and plugin and macro dependencies get `build`.
+A package used in several places takes the widest scope, and a regular helper
+target used only by tests still counts as `runtime`. If any target reference
+doesn't match a declared package or local target, every dependency keeps the
+`runtime` default.
+
+`Package.resolved` pins are `Direct: false`, since the file doesn't record which
+pins are direct. A pin with no release version uses its revision as `Version`.
 
 ## Lockfile Feature Support
 

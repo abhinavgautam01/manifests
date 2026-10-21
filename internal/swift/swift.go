@@ -1,79 +1,20 @@
 package swift
 
 import (
+	"cmp"
 	"encoding/json"
 	"net/url"
-	"regexp"
 	"strings"
 
 	"github.com/git-pkgs/manifests/internal/core"
 )
 
 func init() {
-	core.Register("swift", core.Manifest, &packageSwiftParser{}, core.ExactMatch("Package.swift"))
+	core.Register("swift", core.Manifest, &packageSwiftParser{}, core.AnyMatch(
+		core.ExactMatch("Package.swift"),
+		core.GlobMatch("Package@swift-*.swift"),
+	))
 	core.Register("swift", core.Lockfile, &packageResolvedParser{}, core.ExactMatch("Package.resolved"))
-}
-
-// packageSwiftParser parses Package.swift files.
-type packageSwiftParser struct{}
-
-var (
-	// .Package(url: "https://...", majorVersion: 0, minor: 12)
-	swiftPackageV3Regex = regexp.MustCompile(`\.Package\s*\(\s*url:\s*"([^"]+)"`)
-	// .package(url: "https://...", from: "1.0.0")
-	swiftPackageV4FromRegex = regexp.MustCompile(`\.package\s*\(\s*url:\s*"([^"]+)",\s*from:\s*"([^"]+)"`)
-	// .package(url: "https://...", .upToNextMajor(from: "1.0.0"))
-	swiftPackageV4UpToRegex = regexp.MustCompile(`\.package\s*\(\s*url:\s*"([^"]+)",\s*\.upToNextMajor\s*\(\s*from:\s*"([^"]+)"`)
-	// .package(url: "https://...", "1.0.0"..<"2.0.0")
-	swiftPackageV4RangeRegex = regexp.MustCompile(`\.package\s*\(\s*url:\s*"([^"]+)",\s*"([^"]+)"`)
-	// .package(name: "...", url: "https://...", from: "1.0.0")
-	swiftPackageNamedRegex = regexp.MustCompile(`\.package\s*\(\s*(?:name:\s*"[^"]+",\s*)?url:\s*"([^"]+)"`)
-	// Package(name: "...")
-	swiftSelfNameRegex = regexp.MustCompile(`\bPackage\s*\(\s*name:\s*"([^"]+)"`)
-)
-
-func (p *packageSwiftParser) Parse(filename string, content []byte) (*core.Result, error) {
-	var deps []core.Dependency
-	text := string(content)
-	seen := make(map[string]bool)
-
-	var selfName string
-	if m := swiftSelfNameRegex.FindStringSubmatch(text); m != nil {
-		selfName = m[1]
-	}
-
-	// Try different regex patterns
-	for _, regex := range []*regexp.Regexp{
-		swiftPackageV4FromRegex,
-		swiftPackageV4UpToRegex,
-		swiftPackageV4RangeRegex,
-		swiftPackageV3Regex,
-		swiftPackageNamedRegex,
-	} {
-		for _, match := range regex.FindAllStringSubmatch(text, -1) {
-			url := match[1]
-			version := ""
-			const versionGroup = 2
-			if len(match) > versionGroup {
-				version = match[versionGroup]
-			}
-
-			name := swiftSourceCoordinate(url)
-			if name == "" || seen[name] {
-				continue
-			}
-			seen[name] = true
-
-			deps = append(deps, core.Dependency{
-				Name:    name,
-				Version: version,
-				Scope:   core.Runtime,
-				Direct:  true,
-			})
-		}
-	}
-
-	return &core.Result{Name: selfName, Dependencies: deps}, nil
 }
 
 func swiftSourceCoordinate(rawURL string) string {
@@ -121,12 +62,9 @@ type packageResolvedV1 struct {
 }
 
 type packageResolvedPinV1 struct {
-	Package       string `json:"package"`
-	RepositoryURL string `json:"repositoryURL"`
-	State         struct {
-		Version  string `json:"version"`
-		Revision string `json:"revision"`
-	} `json:"state"`
+	Package       string        `json:"package"`
+	RepositoryURL string        `json:"repositoryURL"`
+	State         resolvedState `json:"state"`
 }
 
 type packageResolvedV2 struct {
@@ -135,13 +73,20 @@ type packageResolvedV2 struct {
 }
 
 type packageResolvedPinV2 struct {
-	Identity string `json:"identity"`
-	Kind     string `json:"kind"`
-	Location string `json:"location"`
-	State    struct {
-		Version  string `json:"version"`
-		Revision string `json:"revision"`
-	} `json:"state"`
+	Identity string        `json:"identity"`
+	Kind     string        `json:"kind"`
+	Location string        `json:"location"`
+	State    resolvedState `json:"state"`
+}
+
+type resolvedState struct {
+	Version  string `json:"version"`
+	Revision string `json:"revision"`
+	Branch   string `json:"branch"`
+}
+
+func (s resolvedState) source(repository string) core.Source {
+	return core.Source{Kind: core.SourceGit, Value: repository, Branch: s.Branch, Ref: s.Revision}
 }
 
 func (p *packageResolvedParser) Parse(filename string, content []byte) (*core.Result, error) {
@@ -179,9 +124,10 @@ func parsePackageResolvedV1(filename string, content []byte) ([]core.Dependency,
 
 		deps = append(deps, core.Dependency{
 			Name:    name,
-			Version: pin.State.Version,
+			Version: cmp.Or(pin.State.Version, pin.State.Revision),
 			Scope:   core.Runtime,
 			Direct:  false,
+			Source:  pin.State.source(pin.RepositoryURL),
 		})
 	}
 
@@ -197,17 +143,24 @@ func parsePackageResolvedV2(filename string, content []byte) ([]core.Dependency,
 	var deps []core.Dependency
 	for _, pin := range resolved.Pins {
 		name := pin.Identity
-		if pin.Kind == "remoteSourceControl" {
+		var source core.Source
+		switch pin.Kind {
+		case "remoteSourceControl":
 			if coordinate := swiftSourceCoordinate(pin.Location); coordinate != "" {
 				name = coordinate
 			}
+			source = pin.State.source(pin.Location)
+		case "registry":
+			name = strings.ToLower(pin.Identity)
+			source = core.Source{Kind: core.SourceRegistry, Value: pin.Identity}
 		}
 
 		deps = append(deps, core.Dependency{
 			Name:    name,
-			Version: pin.State.Version,
+			Version: cmp.Or(pin.State.Version, pin.State.Revision),
 			Scope:   core.Runtime,
 			Direct:  false,
+			Source:  source,
 		})
 	}
 

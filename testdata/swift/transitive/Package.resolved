@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "pins": [
+    {
+      "identity": "runtime.kit",
+      "kind": "remoteSourceControl",
+      "location": "https://example.com/acme/Runtime.Kit.git",
+      "state": {
+        "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "version": "1.0.0"
+      }
+    },
+    {
+      "identity": "support.kit",
+      "kind": "remoteSourceControl",
+      "location": "https://example.com/acme/Support.Kit.git",
+      "state": {
+        "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "version": "1.0.0"
+      }
+    }
+  ]
+}
