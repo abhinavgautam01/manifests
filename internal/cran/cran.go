@@ -253,12 +253,9 @@ func (p *renvLockParser) Parse(filename string, content []byte) (*core.Result, e
 	return &core.Result{Dependencies: deps}, nil
 }
 
-// applyRenvSource records a package's renv source on dep and derives its
-// package identity from it. Repository and Bioconductor packages keep a
-// registry identity. GitHub, GitLab, Bitbucket, git, URL, local and
-// unrecognised sources are source-only entries, so they never acquire a CRAN
-// identity they were not installed from. Entries without a recorded source
-// keep the CRAN identity older lockfiles implied.
+// applyRenvSource sets dep's source and identity from its renv record.
+// Entries without a recorded source keep the CRAN identity older lockfiles
+// implied.
 func applyRenvSource(dep *core.Dependency, pkg renvPackage, repositories map[string]string) {
 	ref := cmp.Or(pkg.RemoteSha, pkg.RemoteRef)
 	switch pkg.Source {
@@ -295,11 +292,7 @@ func applyRenvSource(dep *core.Dependency, pkg renvPackage, repositories map[str
 	}
 }
 
-// applyRenvRepository derives the identity of a package installed from a
-// named package repository. CRAN keeps the default CRAN identity and
-// Bioconductor repositories such as BioCsoft use the Bioconductor identity.
-// Other repositories are CRAN-like registries identified by their URL, taken
-// from the lockfile's repository list when the name is not already a URL. A
+// applyRenvRepository sets dep's identity from its repository name. A
 // repository whose URL is unknown has no package identity.
 func applyRenvRepository(dep *core.Dependency, name string, repositories map[string]string) {
 	if name == "" {
@@ -307,8 +300,8 @@ func applyRenvRepository(dep *core.Dependency, name string, repositories map[str
 	}
 	dep.Source = core.Source{Kind: core.SourceRegistry, Value: name}
 	switch {
-	case name == "CRAN":
-		// The file's default CRAN identity.
+	case name == "CRAN" || name == "RSPM" || name == "PPM" || name == "P3M":
+		// Posit Package Manager serves CRAN under the RSPM, PPM and P3M names.
 	case strings.HasPrefix(strings.ToLower(name), "bioc"):
 		dep.Ecosystem = "bioconductor"
 	case strings.HasPrefix(name, "https://"), strings.HasPrefix(name, "http://"):

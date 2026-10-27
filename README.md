@@ -350,7 +350,8 @@ by their import map key, with `NoPURL` set. Runtime builtins such as `node:fs`,
 inline `data:` modules and bare values are not reported as dependencies.
 
 In `renv.lock`, packages installed from a repository use the `registry` source
-kind with the recorded repository name. CRAN packages keep a `cran` PURL.
+kind with the recorded repository name. CRAN packages keep a `cran` PURL, as
+do packages from Posit Package Manager recorded as `RSPM`, `PPM` or `P3M`.
 Bioconductor packages, including those from repositories such as `BioCsoft`,
 use a `bioconductor` PURL. Packages from other repositories keep a `cran` PURL
 with a `repository_url` taken from the lockfile's repository list, or from the

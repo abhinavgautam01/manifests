@@ -286,6 +286,9 @@ func TestRenvLockSources(t *testing.T) {
   "Packages": {
     "BiocGenerics": {"Package": "BiocGenerics", "Version": "0.58.1", "Source": "Bioconductor", "Repository": "Bioconductor"},
     "survival": {"Package": "survival", "Version": "2.34", "Source": "Repository", "Repository": "CRAN", "Hash": "abc123"},
+    "rspmpkg": {"Package": "rspmpkg", "Version": "1.2.0", "Source": "Repository", "Repository": "RSPM"},
+    "ppmpkg": {"Package": "ppmpkg", "Version": "1.3.0", "Source": "Repository", "Repository": "PPM"},
+    "p3mpkg": {"Package": "p3mpkg", "Version": "1.4.0", "Source": "Repository", "Repository": "P3M"},
     "IRanges": {"Package": "IRanges", "Version": "2.40.0", "Source": "Repository", "Repository": "BioCsoft"},
     "S4Vectors": {"Package": "S4Vectors", "Version": "0.44.0", "Source": "Bioconductor"},
     "legacy": {"Package": "legacy", "Version": "1.0.0"},
@@ -307,6 +310,9 @@ func TestRenvLockSources(t *testing.T) {
 	}{
 		"BiocGenerics": {"pkg:bioconductor/BiocGenerics@0.58.1", "bioconductor", Source{Kind: SourceRegistry, Value: "Bioconductor"}},
 		"survival":     {"pkg:cran/survival@2.34", "cran", Source{Kind: SourceRegistry, Value: "CRAN"}},
+		"rspmpkg":      {"pkg:cran/rspmpkg@1.2.0", "cran", Source{Kind: SourceRegistry, Value: "RSPM"}},
+		"ppmpkg":       {"pkg:cran/ppmpkg@1.3.0", "cran", Source{Kind: SourceRegistry, Value: "PPM"}},
+		"p3mpkg":       {"pkg:cran/p3mpkg@1.4.0", "cran", Source{Kind: SourceRegistry, Value: "P3M"}},
 		"IRanges":      {"pkg:bioconductor/IRanges@2.40.0", "bioconductor", Source{Kind: SourceRegistry, Value: "BioCsoft"}},
 		"S4Vectors":    {"pkg:bioconductor/S4Vectors@0.44.0", "bioconductor", Source{Kind: SourceRegistry, Value: "Bioconductor"}},
 		"legacy":       {"pkg:cran/legacy@1.0.0", "cran", Source{}},
